@@ -1,7 +1,8 @@
 const express = require('express');
+const cors = require('cors');
 const dotenv = require('dotenv');
 const connectMongoDB = require('./config/mongodb');
-const pool = require('./config/supabase');
+const { pool } = require('./config/supabase');
 
 const app = express();
 
@@ -12,7 +13,10 @@ pool.query('SELECT NOW()', (err, res) => {
   else console.log('Supabase bisa digunakan pada:', res.rows[0].now);
 });
 
+app.use(cors());
 app.use(express.json());
+
+app.use('/api/uploads', require('./routes/upload.routes'));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
