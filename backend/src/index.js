@@ -25,6 +25,9 @@ app.use('/api/lender', require('./routes/lender.routes'));
 // Upload
 app.use('/api/uploads', require('./routes/upload.routes'));
 
+// Telemetry
+app.use('/api/telemetry', require('./routes/telemetry.routes'));
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server terkoneksi di port ${PORT}`);
