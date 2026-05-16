@@ -12,6 +12,7 @@ import BrowseCars from './pages/borrower/BrowseCars.tsx';
 import CarDetail from './pages/borrower/CarDetail.tsx';
 import Checkout from './pages/borrower/Checkout.tsx';
 import RentalHistory from './pages/borrower/RentalHistory.tsx';
+import ProfileSettings from './pages/public/ProfileSettings';
 
 // ==========================================
 // IMPOR FRONTEND 2 (LENDER & SIMULATOR)
@@ -70,6 +71,7 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/profile" element={<ProfileSettings />} />
 
             {/* Borrower */}
             <Route path="/borrower/dashboard" element={<BorrowerDashboard />} />
