@@ -16,6 +16,13 @@ pool.query('SELECT NOW()', (err, res) => {
 app.use(cors());
 app.use(express.json());
 
+// Borrower
+app.use('/api/borrower', require('./routes/borrower.routes'));
+
+// Lender
+app.use('/api/lender', require('./routes/lender.routes'));
+
+// Upload
 app.use('/api/uploads', require('./routes/upload.routes'));
 
 const PORT = process.env.PORT || 5000;
