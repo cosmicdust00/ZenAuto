@@ -1,45 +1,70 @@
 import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { RefreshCw, AlertTriangle, CheckSquare } from 'lucide-react';
 
 export default function RentalHistory() {
-  const { token } = useAuth();
+  const { token } = useAuth(); 
   const [history, setHistory] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const fetchLeaseLedgerContext = () => {
-    fetch('http://localhost:5000/api/borrower/reservations', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(res => res.json())
-    .then(data => { if (Array.isArray(data)) setHistory(data); else populateFallbackHistory(); })
-    .catch(() => populateFallbackHistory());
+  // Membuat objek user bypass di bagian atas komponen
+  const user = {
+    user_id: "82e093e6-8204-444c-bcd9-b5fb28006fc1", // UUID milik Ciel
+    full_name: "Ciel"
   };
 
-  const populateFallbackHistory = () => {
-    setHistory([
-      { rental_detail_id: 'rd-7721', start_date: '2026-05-15T12:00:00Z', end_date: '2026-05-18T12:00:00Z', actual_return_date: null, price_per_day_at_booking: 3200000, model_name: 'Tesla Model 3 Performance', status: 'active' },
-      { rental_detail_id: 'rd-1029', start_date: '2026-05-01T09:00:00Z', end_date: '2026-05-03T09:00:00Z', actual_return_date: '2026-05-03T08:50:00Z', price_per_day_at_booking: 450000, model_name: 'Toyota Avanza Veloz 2025', status: 'completed' }
-    ]);
+  const fetchLeaseLedgerContext = async () => {
+    try {
+      setIsLoading(true);
+      // Menggunakan objek user.user_id secara konsisten seperti di dashboard
+      const response = await axios.get(`http://localhost:5000/api/borrower/reservations?user_id=${user.user_id}`);
+      
+      if (Array.isArray(response.data.data)) {
+        setHistory(response.data.data);
+      }
+    } catch (error) {
+      console.error("Fail to fetch history transaction:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  useEffect(() => { fetchLeaseLedgerContext(); }, [token]);
+  useEffect(() => { 
+    fetchLeaseLedgerContext(); 
+  }, []);
 
+  // Fungsi return mobil (mengaktifkan mekanisme penalty)
   const dispatchReturnEngineTrigger = async (detailId: string) => {
     if (!window.confirm("Confirm Action: Discharging vehicle unit allocation. Proceed to hit server automated penalty checker?")) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/borrower/returns/${detailId}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+      // Menembak rute returnCar yang dibuat
+      const response = await axios.post(`http://localhost:5000/api/borrower/returns/${detailId}`, {}, {
+        headers: { 'Authorization': `Bearer ${token}` } // Untuk persiapan JWT
       });
-      if (!response.ok) throw new Error();
-      alert('Return documented. Penalty metrics evaluated successfully.');
+      
+      const data = response.data.data;
+
+      // Mengecek apakah ada denda berdasarkan respons backend
+      if (data.is_late) {
+        alert(`RETURN DOCUMENTED (LATE PENALTY APPLIED)!\n\nYou returned the car ${data.late_days} day(s) late.\nPenalty Amount: Rp ${data.penalty_amount.toLocaleString('id-ID')}`);
+      } else {
+        alert('Return documented successfully. No late penalties accrued.');
+      }
+      
+      // Refresh tabel agar kolom 'Actual Return Log' terisi
       fetchLeaseLedgerContext();
-    } catch {
-      alert('Sandbox Return Broadcasted: Server automatically evaluates timestamps. Status converted to [Completed]. Unit returns to [Available].');
-      setHistory(prev => prev.map(item => item.rental_detail_id === detailId ? { ...item, actual_return_date: new Date().toISOString(), status: 'completed' } : item));
+
+    } catch (error: any) {
+      console.error("Fail to return:", error);
+      alert(error.response?.data?.message || "Internal Server Error saat mengembalikan mobil.");
     }
   };
+
+  if (isLoading) {
+    return <div className="p-8 text-center font-black uppercase tracking-widest text-xl">Loading Ledger Data...</div>;
+  }
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
@@ -61,37 +86,55 @@ export default function RentalHistory() {
             </tr>
           </thead>
           <tbody className="divide-y-2 divide-black bg-[#F0E9E0]">
-            {history.map((row, idx) => (
-              <tr key={idx} className="hover:bg-white transition-colors">
-                <td className="p-4 border-r-2 border-black font-black uppercase text-xs">{row.model_name}</td>
-                <td className="p-4 border-r-2 border-black text-xs">{new Date(row.start_date).toLocaleString()}</td>
-                <td className="p-4 border-r-2 border-black text-xs">{new Date(row.end_date).toLocaleString()}</td>
-                <td className="p-4 border-r-2 border-black text-xs">
-                  {row.actual_return_date ? (
-                    <span className="text-emerald-800 bg-emerald-100 border border-emerald-600 px-2 py-0.5 font-black uppercase text-[10px]">
-                      {new Date(row.actual_return_date).toLocaleString()}
-                    </span>
-                  ) : (
-                    <span className="text-amber-800 bg-amber-100 border border-amber-600 px-2 py-0.5 font-black uppercase text-[10px] inline-flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> In Lease Scope
-                    </span>
-                  )}
-                </td>
-                <td className="p-4 border-r-2 border-black text-xs text-slate-600">IDR {row.price_per_day_at_booking.toLocaleString()}</td>
-                <td className="p-4 text-center">
-                  {!row.actual_return_date ? (
-                    <button 
-                      onClick={() => dispatchReturnEngineTrigger(row.rental_detail_id)}
-                      className="neo-btn bg-amber-400 text-black px-4 py-1.5 text-[10px] uppercase tracking-wider font-black flex items-center gap-1 mx-auto rounded-none"
-                    >
-                      <RefreshCw className="w-3 h-3" /> Handover Unit
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-black inline-flex items-center gap-1"><CheckSquare className="w-3 h-3" /> ARCHIVED RECORD</span>
-                  )}
+            {history.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest">
+                  NO HISTORICAL RECORDS FOUND FOR THIS USER.
                 </td>
               </tr>
-            ))}
+            ) : (
+              history.map((row, idx) => (
+                <tr key={idx} className="hover:bg-white transition-colors">
+                  <td className="p-4 border-r-2 border-black font-black uppercase text-xs">
+                    {row.brand} {row.model_name}
+                    <div className="text-[9px] text-gray-500 mt-0.5">Plate: {row.license_plate}</div>
+                  </td>
+                  <td className="p-4 border-r-2 border-black text-xs">{new Date(row.start_date).toLocaleString('id-ID')}</td>
+                  <td className="p-4 border-r-2 border-black text-xs">{new Date(row.end_date).toLocaleString('id-ID')}</td>
+                  <td className="p-4 border-r-2 border-black text-xs">
+                    {row.actual_return_date ? (
+                      <span className="text-emerald-800 bg-emerald-100 border border-emerald-600 px-2 py-0.5 font-black uppercase text-[10px]">
+                        {new Date(row.actual_return_date).toLocaleString('id-ID')}
+                      </span>
+                    ) : (
+                      <span className="text-amber-800 bg-amber-100 border border-amber-600 px-2 py-0.5 font-black uppercase text-[10px] inline-flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> In Lease Scope
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-4 border-r-2 border-black text-xs text-slate-600">IDR {parseFloat(row.total_amount).toLocaleString('id-ID')}</td>
+                  <td className="p-4 text-center">
+                    {/* Hanya tampilkan tombol Handover jika mobil belum dikembalikan DAN status transaksi 'active' */}
+                    {!row.actual_return_date && row.transaction_status === 'active' ? (
+                      <button 
+                        onClick={() => dispatchReturnEngineTrigger(row.rental_detail_id)}
+                        className="neo-btn bg-amber-400 text-black px-4 py-1.5 text-[10px] uppercase tracking-wider font-black flex items-center gap-1 mx-auto rounded-none border-2 border-black hover:bg-amber-300"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Handover Unit
+                      </button>
+                    ) : !row.actual_return_date && row.transaction_status === 'pending' ? (
+                      <span className="text-[10px] text-rose-500 uppercase tracking-widest font-black inline-flex items-center gap-1">
+                        PAYMENT PENDING
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-gray-400 uppercase tracking-widest font-black inline-flex items-center gap-1">
+                        <CheckSquare className="w-3 h-3" /> ARCHIVED RECORD
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

@@ -7,6 +7,6 @@ router.post('/reservations', borrowerController.createReservation);
 router.post('/payments', borrowerController.processPayment);
 router.post('/returns/:rental_detail_id', borrowerController.returnCar);
 router.get('/reservations', borrowerController.getBorrowerReservations);
-router.get('/penalties', getBorrowerPenalties);
+router.get('/penalties', borrowerController.getBorrowerPenalties);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Calendar, MapPin, ShieldCheck, Users, Fuel, 
@@ -7,10 +8,20 @@ import {
 } from 'lucide-react';
 
 export default function CarDetail() {
-  const { id } = useParams();
+  const { car_id } = useParams(); // Sesuaikan dengan path di App.tsx (:car_id)
   const navigate = useNavigate();
-  const { user } = useAuth();
+  // const { user } = useAuth();
+
+  const user = {
+      user_id: "82e093e6-8204-444c-bcd9-b5fb28006fc1", // UUID milik Ciel dari Supabase
+      full_name: "Ciel"
+  };
   
+  // State untuk data
+  const [car, setCar] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // State untuk form pemesanan
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -20,29 +31,6 @@ export default function CarDetail() {
   const [useChauffeur, setUseChauffeur] = useState(false);
   const [useExtraInsurance, setUseExtraInsurance] = useState(false);
   const [useChildSeat, setUseChildSeat] = useState(false);
-
-  // Simulasi data mobil dari Katalog
-  const car = {
-    brand: "Tesla",
-    model: "Model 3 Performance",
-    type: "Electric",
-    pricePerDay: 3200000,
-    mainImage: "https://images.unsplash.com/photo-1560958089-b8a1929cea89?q=80&w=800&auto=format&fit=crop", 
-    location: "SCBD Garage, South Jakarta",
-    seats: 5,
-    transmission: "Automatic",
-    plate: "B 1024 EV"
-  };
-
-  // --- REVISI: GALERI MENGGUNAKAN TOMBOL TEKS (TEXT LABELS) ---
-  const galleryItems = [
-    { label: "FRONT VIEW", imgSrc: car.mainImage },
-    { label: "SIDE VIEW", imgSrc: "https://images.unsplash.com/photo-1609521263047-f8f205293f24?q=80&w=800&auto=format&fit=crop" },
-    { label: "REAR VIEW", imgSrc: "https://images.unsplash.com/photo-1554744512-d6c603f27c54?q=80&w=800&auto=format&fit=crop" },
-    { label: "FRONT INTERIOR", imgSrc: "https://images.unsplash.com/photo-1519750783826-e2420f4d687f?q=80&w=800&auto=format&fit=crop" },
-    { label: "REAR INTERIOR", imgSrc: "https://images.unsplash.com/photo-1606016159991-dfe4f2746ad5?q=80&w=800&auto=format&fit=crop" },
-    { label: "TOP VIEW", imgSrc: "https://images.unsplash.com/photo-1555626906-fcf10d6851b4?q=80&w=800&auto=format&fit=crop" }
-  ];
 
   // State untuk melacak gambar dan tombol aktif
   const [activeIndex, setActiveIndex] = useState(0);
@@ -54,6 +42,31 @@ export default function CarDetail() {
     childSeat: 50000
   };
 
+  // Fetch data mobil
+  useEffect(() => {
+    const fetchCarDetail = async () => {
+      try {
+        // Mengambil semua mobil available, lalu mencari yang ID-nya cocok
+        const response = await axios.get('http://localhost:5000/api/borrower/cars/available');
+        const foundCar = response.data.data.find((c: any) => c.id === car_id);
+        
+        if (foundCar) {
+          setCar(foundCar);
+        } else {
+          alert("Car is not available or already rented");
+          navigate('/cars');
+        }
+      } catch (error) {
+        console.error("Failed to fetch car detail:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (car_id) fetchCarDetail();
+  }, [car_id, navigate]);
+
+  // Kalkulator tanggal sewa
   useEffect(() => {
     if (startDate && endDate) {
       const start = new Date(startDate);
@@ -69,7 +82,22 @@ export default function CarDetail() {
     }
   }, [startDate, endDate]);
 
-  const baseTotal = totalDays * car.pricePerDay;
+  if (isLoading || !car) {
+    return <div className="p-12 text-center font-black uppercase text-xl">Loading Vehicle Data...</div>;
+  }
+
+  // Galeri (Menggunakan gambar dari DB untuk Front View)
+  const galleryItems = [
+    { label: "FRONT VIEW", imgSrc: car.img || "https://placehold.co/800x600/0F1525/A3E635?text=NO+IMAGE" },
+    { label: "SIDE VIEW", imgSrc: "https://images.unsplash.com/photo-1609521263047-f8f205293f24?q=80&w=800&auto=format&fit=crop" },
+    { label: "REAR VIEW", imgSrc: "https://images.unsplash.com/photo-1554744512-d6c603f27c54?q=80&w=800&auto=format&fit=crop" },
+    { label: "FRONT INTERIOR", imgSrc: "https://images.unsplash.com/photo-1519750783826-e2420f4d687f?q=80&w=800&auto=format&fit=crop" },
+    { label: "REAR INTERIOR", imgSrc: "https://images.unsplash.com/photo-1606016159991-dfe4f2746ad5?q=80&w=800&auto=format&fit=crop" },
+    { label: "TOP VIEW", imgSrc: "https://images.unsplash.com/photo-1555626906-fcf10d6851b4?q=80&w=800&auto=format&fit=crop" }
+  ];
+
+  // Kalkulasi harga
+  const baseTotal = totalDays * car.price;
   const addonsTotal = totalDays * (
     (useChauffeur ? ADDONS_PRICE.chauffeur : 0) + 
     (useExtraInsurance ? ADDONS_PRICE.insurance : 0) + 
@@ -77,9 +105,12 @@ export default function CarDetail() {
   );
   const grandTotal = baseTotal + addonsTotal;
 
-  const hasDriverLicense = Boolean(user?.license_card_number);
+  // BYPASS SEMENTARA UNTUK TESTING (Anggap selalu true agar bisa checkout)
+  // Saat integrasi penuh, ganti menjadi: Boolean(user?.license_card_number)
+  const hasDriverLicense = true; 
 
-  const handleCheckout = () => {
+  // Fungsi checkout (Menembak API POST Reservasi)
+  const handleCheckout = async () => {
     if (!hasDriverLicense) {
       alert("Please complete your Driver's License in your profile first.");
       return;
@@ -88,14 +119,47 @@ export default function CarDetail() {
       alert("Please select a valid date range.");
       return;
     }
-    navigate(`/borrower/checkout?price=${grandTotal}&carId=${id}`);
+
+    try {
+      setIsSubmitting(true);
+      
+      // Payload sesuai dengan req.body di createReservation (backend)
+      const payload = {
+        user_id: user?.user_id,
+        car_id: car.id,
+        start_date: startDate,
+        end_date: endDate,
+        total_days: totalDays,
+        add_ons: {
+          use_chauffeur: useChauffeur,
+          use_extra_insurance: useExtraInsurance,
+          use_child_seat: useChildSeat
+        },
+        base_price_per_day: car.price,
+        grand_total_payment: grandTotal
+      };
+
+      const response = await axios.post('http://localhost:5000/api/borrower/reservations', payload);
+      
+      // Ambil transaction_id hasil dari INSERT database
+      const transactionId = response.data.data.transaction_id;
+      
+      // Lempar user ke halaman pembayaran membawa ID transaksi asli
+      navigate(`/borrower/checkout/${transactionId}`);
+
+    } catch (error: any) {
+      console.error("Failed to create reservation:", error);
+      alert(error.response?.data?.message || "Failed to create reservation. The car might be booked.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="max-w-7xl mx-auto p-8 animate-fade-in space-y-8">
       
       <button 
-        onClick={() => navigate('/borrower/cars')}
+        onClick={() => navigate('/cars')}
         className="font-black text-sm uppercase tracking-widest text-gray-500 hover:text-black flex items-center gap-2 transition-colors"
       >
         ← Return to Catalog
@@ -113,6 +177,7 @@ export default function CarDetail() {
               alt={car.model} 
               className="w-full h-full object-cover transition-opacity duration-300" 
               key={galleryItems[activeIndex].imgSrc} 
+              onError={(e:any) => { e.target.src = "https://placehold.co/800x600/0F1525/A3E635?text=IMAGE+UNAVAILABLE" }}
             />
           </div>
 
@@ -163,7 +228,7 @@ export default function CarDetail() {
               </div>
               <div className="space-y-1">
                 <ShieldCheck className="w-6 h-6 text-emerald-500" />
-                <p className="font-black text-sm uppercase">{car.plate}</p>
+                <p className="font-black text-sm uppercase">{car.license_plate}</p>
                 <p className="text-xs text-gray-500 font-bold uppercase">Verified Plate</p>
               </div>
             </div>
@@ -250,31 +315,31 @@ export default function CarDetail() {
 
             <div className="bg-white border-2 border-black rounded-xl p-4 space-y-2">
               <div className="flex justify-between text-xs font-bold text-gray-500 uppercase">
-                <span>Rp {car.pricePerDay.toLocaleString('en-US')} x {totalDays} Days</span>
-                <span>Rp {baseTotal.toLocaleString('en-US')}</span>
+                <span>Rp {car.price.toLocaleString('id-ID')} x {totalDays} Days</span>
+                <span>Rp {baseTotal.toLocaleString('id-ID')}</span>
               </div>
               {addonsTotal > 0 && (
                 <div className="flex justify-between text-xs font-bold text-emerald-600 uppercase border-b border-dashed pb-2">
                   <span>Add-ons Total</span>
-                  <span>+ Rp {addonsTotal.toLocaleString('en-US')}</span>
+                  <span>+ Rp {addonsTotal.toLocaleString('id-ID')}</span>
                 </div>
               )}
               <div className="flex justify-between items-end pt-2">
                 <span className="font-black text-sm uppercase">Total Payment</span>
-                <span className="font-black text-xl text-black">Rp {grandTotal.toLocaleString('en-US')}</span>
+                <span className="font-black text-xl text-black">Rp {grandTotal.toLocaleString('id-ID')}</span>
               </div>
             </div>
 
             <button 
               onClick={handleCheckout}
-              disabled={!hasDriverLicense || totalDays <= 0}
+              disabled={!hasDriverLicense || totalDays <= 0 || isSubmitting}
               className={`w-full p-4 font-black text-sm uppercase tracking-wider rounded-xl border-4 flex justify-center items-center gap-2 transition-all shadow-[4px_4px_0px_#000]
-                ${hasDriverLicense && totalDays > 0 
+                ${hasDriverLicense && totalDays > 0 && !isSubmitting
                   ? 'bg-yellow-400 text-black border-black hover:translate-y-1 hover:shadow-none cursor-pointer' 
                   : 'bg-gray-300 text-gray-500 border-gray-400 cursor-not-allowed shadow-none'}
               `}
             >
-              Proceed to Checkout <ArrowRight className="w-5 h-5" />
+              {isSubmitting ? 'PROCESSING...' : 'Proceed to Checkout'} <ArrowRight className="w-5 h-5" />
             </button>
           </div>
 
