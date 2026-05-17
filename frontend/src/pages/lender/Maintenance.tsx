@@ -48,7 +48,7 @@ export default function Maintenance() {
 
     setIsLoading(true);
     try {
-      const response = await axios.get('http://localhost:5000/api/lender/maintenance', {
+      const response = await axios.get('/api/lender/maintenance', {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -93,7 +93,7 @@ export default function Maintenance() {
     }
 
     try {
-      await axios.put(`http://localhost:5000/api/lender/maintenances/${maintenanceId}/complete`, { cost: finalCost }, {
+      await axios.put(`/api/lender/maintenances/${maintenanceId}/complete`, { cost: finalCost }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert("Maintenance is complete, car is available.");
@@ -114,7 +114,7 @@ export default function Maintenance() {
     setIsModalOpen(true);
     try {
       // Tarik daftar armada milik lender ini (Backend sudah tahu siapa lendernya dari token)
-      const response = await axios.get('http://localhost:5000/api/lender/fleets', {
+      const response = await axios.get('/api/lender/fleets', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -137,7 +137,7 @@ export default function Maintenance() {
 
     setIsSubmitting(true);
     try {
-      await axios.post('http://localhost:5000/api/lender/maintenances', {
+      await axios.post('/api/lender/maintenances', {
         car_id: selectedCarId,
         description: description
       }, {

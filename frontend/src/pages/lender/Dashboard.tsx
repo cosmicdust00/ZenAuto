@@ -56,7 +56,7 @@ export default function LenderDashboard() {
         };
         
         // Fetch Statistics data
-        const dashboardResponse = await axios.get('http://localhost:5000/api/lender/dashboard', config);
+        const dashboardResponse = await axios.get('/api/lender/dashboard', config);
         
         if (dashboardResponse.data.data) {
           setStats({
@@ -69,7 +69,7 @@ export default function LenderDashboard() {
         }
 
         // Fetch Data status armada
-        const fleetsResponse = await axios.get('http://localhost:5000/api/lender/fleets', config);
+        const fleetsResponse = await axios.get('/api/lender/fleets', config);
 
         if (fleetsResponse.data.data) {
           setFleetList(fleetsResponse.data.data);

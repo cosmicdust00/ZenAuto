@@ -53,7 +53,7 @@ export default function FleetManagement() {
 
     setIsLoading(true);
     try {
-      const response = await axios.get('http://localhost:5000/api/lender/fleets', {
+      const response = await axios.get('/api/lender/fleets', {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -93,7 +93,7 @@ export default function FleetManagement() {
     if (!token) return;
 
     try {
-      const response = await axios.get('http://localhost:5000/api/lender/car-models', {
+      const response = await axios.get('/api/lender/car-models', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCarModels(response.data.data || []);
@@ -140,14 +140,14 @@ export default function FleetManagement() {
       const uploadData = new FormData();
       uploadData.append('image', selectedFile);
 
-      const uploadResponse = await axios.post('http://localhost:5000/api/uploads/car-image', uploadData, {
+      const uploadResponse = await axios.post('/api/uploads/car-image', uploadData, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       const finalImageUrl = uploadResponse.data.imageUrl;
 
       // Submit Data Mobil
-      await axios.post('http://localhost:5000/api/lender/fleets', {
+      await axios.post('/api/lender/fleets', {
         model_id: formData.model_id,
         license_plate: formData.license_plate,
         color: formData.color,
@@ -186,7 +186,7 @@ export default function FleetManagement() {
     if (!isConfirm) return;
 
     try {
-      await axios.put(`http://localhost:5000/api/lender/fleets/${carId}/withdraw`, {}, {
+      await axios.put(`/api/lender/fleets/${carId}/withdraw`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

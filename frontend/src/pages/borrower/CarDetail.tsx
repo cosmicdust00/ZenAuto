@@ -43,7 +43,7 @@ export default function CarDetail() {
     const fetchCarDetail = async () => {
       try {
         // Mengambil semua mobil available (Rute ini publik, tidak perlu token)
-        const response = await axios.get('http://localhost:5000/api/borrower/cars/available');
+        const response = await axios.get('/api/borrower/cars/available');
         const foundCar = response.data.data.find((c: any) => c.id === car_id);
         
         if (foundCar) {
@@ -144,7 +144,7 @@ export default function CarDetail() {
       };
 
       // Tembak POST API menggunakan kombinasi payload dan config
-      const response = await axios.post('http://localhost:5000/api/borrower/reservations', payload, config);
+      const response = await axios.post('/api/borrower/reservations', payload, config);
       
       // Ambil transaction_id hasil dari INSERT database
       const transactionId = response.data.data.transaction_id;

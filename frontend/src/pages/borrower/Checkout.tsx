@@ -32,7 +32,7 @@ export default function Checkout() {
           }
         };
 
-        const response = await axios.get(`http://localhost:5000/api/borrower/reservations`, config);
+        const response = await axios.get(`/api/borrower/reservations`, config);
         
         // Cari transaksi yang ID-nya cocok dengan URL saat ini
         const foundTx = response.data.data.find((tx: any) => tx.transaction_id === transaction_id);
@@ -65,7 +65,7 @@ export default function Checkout() {
       };
 
       // Tembak API Payment yang sudah dibuat di borrower.controller.js
-      await axios.post('http://localhost:5000/api/borrower/payments', {
+      await axios.post('/api/borrower/payments', {
         transaction_id: transaction_id,
         payment_method: method,
         amount: parseFloat(transaction.total_amount) // Kirim jumlah persis seperti di database

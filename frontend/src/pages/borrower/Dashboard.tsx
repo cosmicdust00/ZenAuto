@@ -36,11 +36,11 @@ export default function BorrowerDashboard() {
 
                 // Bersihkan alamat URL dari query string "?user_id=", kirim config sebagai parameter kedua
                 // Fetch Riwayat Transaksi milik borrower aktif
-                const resReservations = await axios.get(`http://localhost:5000/api/borrower/reservations`, config);
+                const resReservations = await axios.get(`/api/borrower/reservations`, config);
                 const reservations = resReservations.data.data;
 
                 // Fetch denda baru milik borrower aktif
-                const resPenalties = await axios.get(`http://localhost:5000/api/borrower/penalties`, config);
+                const resPenalties = await axios.get(`/api/borrower/penalties`, config);
                 const totalPenalties = resPenalties.data.data.total_unpaid;
 
                 const totalTrips = reservations.length;

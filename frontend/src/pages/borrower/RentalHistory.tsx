@@ -44,7 +44,7 @@ export default function RentalHistory() {
     if (!window.confirm("Confirm Action: Discharging vehicle unit allocation. Proceed to hit server automated penalty checker?")) return;
 
     try {
-      const response = await axios.post(`http://localhost:5000/api/borrower/returns/${detailId}`, {}, {
+      const response = await axios.post(`/api/borrower/returns/${detailId}`, {}, {
         headers: { Authorization: `Bearer ${token}` } 
       });
       

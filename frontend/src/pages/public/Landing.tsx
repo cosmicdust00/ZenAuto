@@ -71,7 +71,7 @@ export default function Landing() {
   useEffect(() => {
     const fetchFaqs = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/faqs');
+        const response = await axios.get('/api/faqs');
         const dbFaqs = response.data.map((faq: any, index: number) => ({
           id: String(faq.number_id || index + 1).padStart(2, '0'),
           numberId: faq.number_id || index + 1,
@@ -152,7 +152,7 @@ export default function Landing() {
     if (!savedQuestion.trim()) return;
     
     try {
-      await axios.post('http://localhost:5000/api/faqs/inquiry', { 
+      await axios.post('/api/faqs/inquiry', { 
         question: savedQuestion 
       });
       alert("Pertanyaan berhasil dikirim ke antrean admin!");
@@ -175,7 +175,7 @@ export default function Landing() {
     try {
       const simulationId = "dummy-uuid-atau-id-asli-dari-tabel-faq"; 
 
-      await axios.put(`http://localhost:5000/api/faqs/publish/${simulationId}`, {
+      await axios.put(`/api/faqs/publish/${simulationId}`, {
         answer: adminAnswer
       }, {
         headers: { Authorization: `Bearer ${token}` }

@@ -20,7 +20,7 @@ export default function BrowseCars() {
     const fetchCars = async () => {
       try {
         // Ganti URL ini dengan VITE_API_URL saat deploy ke Vercel nanti
-        const response = await axios.get('http://localhost:5000/api/borrower/cars/available');
+        const response = await axios.get('/api/borrower/cars/available');
         
         // Mapping otomatis karena sudah membuat alias di Backend (m.capacity as seats, dll)
         const realData = response.data.data.map((car: any) => ({

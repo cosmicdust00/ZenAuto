@@ -55,7 +55,7 @@ export default function ProfileSettings() {
 
     try {
       // Eksekusi HTTP PUT ke backend dengan Header JWT
-      const response = await axios.put('http://localhost:5000/api/users/profile', {
+      const response = await axios.put('/api/users/profile', {
         license_card_number: licenseNumber,
         bank_account: bankAccount
       }, {

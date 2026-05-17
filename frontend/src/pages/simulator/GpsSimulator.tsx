@@ -38,7 +38,7 @@ export default function GpsSimulator() {
 
        try {
           // API MongoDB
-          await axios.post('http://localhost:5000/api/telemetry/locations', {
+          await axios.post('/api/telemetry/locations', {
             car_id: selectedDevice.trim(),
             latitude: parseFloat(newLat),
             longitude: parseFloat(newLng)

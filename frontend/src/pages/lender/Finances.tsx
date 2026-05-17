@@ -34,7 +34,7 @@ export default function Finances() {
 
       setIsLoading(true);
       try {
-        const response = await axios.get('http://localhost:5000/api/lender/finances', {
+        const response = await axios.get('/api/lender/finances', {
           headers: { Authorization: `Bearer ${token}` }
         });
 

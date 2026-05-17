@@ -55,7 +55,7 @@ export default function LiveTracking() {
       if (!targetCarId || isHistoryMode || !token) return;
 
       try {
-        const response = await axios.get(`http://localhost:5000/api/telemetry/locations/${targetCarId}`, {
+        const response = await axios.get(`/api/telemetry/locations/${targetCarId}`, {
           params: { _t: Date.now() },
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -125,7 +125,7 @@ export default function LiveTracking() {
     try {
       setIsFetchingHistory(true);
       
-      const response = await axios.get(`http://localhost:5000/api/telemetry/history/${targetCarId}`, {
+      const response = await axios.get(`/api/telemetry/history/${targetCarId}`, {
         params: { 
           start: startTime,
           end: endTime,
