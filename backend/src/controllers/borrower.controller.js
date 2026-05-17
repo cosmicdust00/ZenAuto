@@ -370,3 +370,64 @@ exports.getBorrowerReservations = async (req, res) => {
     }
 };
 
+// GET /api/borrower/penalties
+// Mengambil daftar denda dan total tagihan denda yang belum dibayar
+exports.getBorrowerPenalties = async (req, res) => {
+    try {
+        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
+        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
+        const userId = req.query.user_id; 
+
+        if (!userId) {
+            return res.status(400).json({ message: "User ID is required for testing!" });
+        }
+
+        const query = `
+            SELECT 
+                p.penalty_id, 
+                p.penalty_type, 
+                p.amount, 
+                p.description, 
+                p.is_paid,
+                rd.actual_return_date,
+                m.brand, 
+                m.model_name,
+                f.license_plate
+            FROM penalties p
+            JOIN rental_details rd ON p.rental_detail_id = rd.rental_detail_id
+            JOIN rental_transactions rt ON rd.transaction_id = rt.transaction_id
+            JOIN fleet_cars f ON rd.car_id = f.car_id
+            JOIN car_models m ON f.model_id = m.model_id
+            WHERE rt.user_id = $1
+            ORDER BY p.is_paid ASC, rd.actual_return_date DESC;
+        `;
+        
+        const result = await pool.query(query, [userId]);
+
+        // Kalkulasi total denda yang belum dibayar (is_paid = false)
+        let totalUnpaid = 0;
+        const formattedPenalties = result.rows.map(row => {
+            const amountNum = parseFloat(row.amount);
+            if (!row.is_paid) {
+                totalUnpaid += amountNum;
+            }
+            return {
+                ...row,
+                amount: amountNum
+            };
+        });
+
+        res.status(200).json({
+            message: "Successfully retrieved penalty records.",
+            data: {
+                total_unpaid: totalUnpaid,
+                penalties: formattedPenalties
+            }
+        });
+
+    } catch (error) {
+        console.error("Error in getBorrowerPenalties:", error.message);
+        res.status(500).json({ message: "Internal server error." });
+    }
+};
+
