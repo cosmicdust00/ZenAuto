@@ -5,11 +5,11 @@ const jwt = require("jsonwebtoken")
 const SALT_ROUNDS = 10;
 
 exports.register = async (req, res, next) => {
-    const { full_name, email, password_hash, phone_number, id_card_number } =
+    const { full_name, email, password, phone_number, id_card_number } =
         req.body;
 
     const { rows } = await pool.query(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)",
+        'SELECT EXISTS(SELECT 1 FROM "user" WHERE email = $1)',
         [email],
     );
 
@@ -19,11 +19,11 @@ exports.register = async (req, res, next) => {
         });
     }
 
-    password_hash = await bcrypt.hash(password_hash, SALT_ROUNDS);
+    const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
     await pool.query(
         `
-            INSERT INTO users (full_name, email, password_hash, phone_number, id_card_number)
+            INSERT INTO "user" (full_name, email, password_hash, phone_number, id_card_number)
             VALUES ($1, $2, $3, $4, $5);
         `,
         [full_name, email, password_hash, phone_number, id_card_number],
@@ -39,23 +39,23 @@ exports.login = async (req, res, next) => {
 
     const { rows } = await pool.query(
         `
-            SELECT * FROM users
+            SELECT * FROM "user"
             WHERE email = $1;
         `,
         [email]
     );
 
-    if (!rows[0].exists) {
-        return res.status(404).json({
-            message: "User tidak ditemukan",
-        })
+    if (rows.length === 0) {
+    return res.status(404).json({
+        message: "User tidak ditemukan",
+    });
     }
 
     const user = rows[0]
 
-    const isNotMatch = await bcrypt.compare(password, user.password_hash);
+    const isMatch = await bcrypt.compare(password, user.password_hash);
 
-    if (isNotMatch) {
+    if (!isMatch) {
         return res.status(400).json({
             message: "Password salah",
         })
@@ -68,6 +68,8 @@ exports.login = async (req, res, next) => {
     const token = jwt.sign(jwtPayload, process.env.JWT_SECRET, {
         expiresIn: "24h"
     })
+
+    delete user.password_hash;
 
     res.status(200).json({
         token,

@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const borrowerController = require('../controllers/borrower.controller');
+const { authorizeToken } = require('../middlewares/auth'); 
 
 router.get('/cars/available', borrowerController.getAvailableCars);
+
+router.use(authorizeToken);
+
 router.post('/reservations', borrowerController.createReservation);
 router.post('/payments', borrowerController.processPayment);
 router.post('/returns/:rental_detail_id', borrowerController.returnCar);

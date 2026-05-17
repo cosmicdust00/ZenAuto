@@ -1,9 +1,9 @@
 const { pool } = require('../config/supabase');
 
-// Mengambil mobil yang dapat disewa
+// Mengambil mobil yang dapat disewa (public)
 exports.getAvailableCars = async (req, res) => {
     try {
-        const { brand, transmission, location } = req.query; 
+        const { brand, transmission, location } = req.query;
 
         let query = `
             SELECT 
@@ -25,7 +25,7 @@ exports.getAvailableCars = async (req, res) => {
             JOIN car_models m ON f.model_id = m.model_id
             WHERE f.status = 'available'
         `;
-        
+
         const values = [];
         let counter = 1;
 
@@ -56,9 +56,9 @@ exports.getAvailableCars = async (req, res) => {
             reviews: parseInt(car.reviews)
         }));
 
-        res.status(200).json({ 
-            message: "Successfully retrieved available cars.", 
-            data: formattedData 
+        res.status(200).json({
+            message: "Successfully retrieved available cars.",
+            data: formattedData
         });
 
     } catch (error) {
@@ -68,16 +68,15 @@ exports.getAvailableCars = async (req, res) => {
 };
 
 // Membuat atau melakukan sewa
-// Membuat atau melakukan sewa
 exports.createReservation = async (req, res) => {
-    const client = await pool.connect(); 
+    const client = await pool.connect();
 
     try {
-        // Tangkap variabel baru dari frontend
-        const { user_id, car_id, start_date, end_date, total_days, add_ons, base_price_per_day, grand_total_payment } = req.body;
+        const userId = req.user?.userId;
 
-        // Memastikan variabel harga baru divalidasi
-        if (!user_id || !car_id || !start_date || !end_date || grand_total_payment === undefined || base_price_per_day === undefined) {
+        const { car_id, start_date, end_date, total_days, add_ons, base_price_per_day, grand_total_payment } = req.body;
+
+        if (!userId || !car_id || !start_date || !end_date || grand_total_payment === undefined || base_price_per_day === undefined) {
             return res.status(400).json({ message: "Required fields are missing!" });
         }
 
@@ -88,11 +87,11 @@ exports.createReservation = async (req, res) => {
         if (startDateObj >= endDateObj) {
             return res.status(400).json({ message: "End date must be strictly after start date!" });
         }
-        if (startDateObj < new Date(new Date().setHours(0,0,0,0))) { // Memastikan tidak menyewa di hari yang sudah lewat
+        if (startDateObj < new Date(new Date().setHours(0, 0, 0, 0))) {
             return res.status(400).json({ message: "Cannot book a car in the past!" });
         }
 
-        await client.query('BEGIN'); 
+        await client.query('BEGIN');
 
         // FOR UPDATE untuk mencegah race condition
         const carQuery = `SELECT status FROM fleet_cars WHERE car_id = $1 FOR UPDATE`;
@@ -107,8 +106,7 @@ exports.createReservation = async (req, res) => {
             VALUES ($1, NOW(), $2, 'pending', $3)
             RETURNING transaction_id;
         `;
-        // Pastikan add_ons dikonversi ke JSON string jika tidak otomatis terbaca
-        const txResult = await client.query(txQuery, [user_id, grand_total_payment, JSON.stringify(add_ons || {})]);
+        const txResult = await client.query(txQuery, [userId, grand_total_payment, JSON.stringify(add_ons || {})]);
         const transactionId = txResult.rows[0].transaction_id;
 
         // Insert ke rental details menggunakan base_price_per_day dari frontend
@@ -119,7 +117,7 @@ exports.createReservation = async (req, res) => {
         `;
         await client.query(detailQuery, [transactionId, car_id, start_date, end_date, base_price_per_day]);
 
-        await client.query('COMMIT'); 
+        await client.query('COMMIT');
 
         res.status(201).json({
             message: "Reservation successfully created!",
@@ -131,16 +129,15 @@ exports.createReservation = async (req, res) => {
         });
 
     } catch (error) {
-        // Rollback kalau error
-        await client.query('ROLLBACK'); 
+        await client.query('ROLLBACK');
         console.error("Transaction Error:", error.message);
-        
+
         if (error.message === 'CAR_NOT_FOUND') return res.status(404).json({ message: "Car not found." });
         if (error.message === 'CAR_NOT_AVAILABLE') return res.status(400).json({ message: "Car is currently not available for rent." });
-        
+
         res.status(500).json({ message: "Internal server error during reservation." });
     } finally {
-        client.release(); 
+        client.release();
     }
 };
 
@@ -150,6 +147,11 @@ exports.processPayment = async (req, res) => {
 
     try {
         const { transaction_id, payment_method, amount } = req.body;
+        const userId = req.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
 
         if (!transaction_id || !payment_method || !amount) {
             return res.status(400).json({ message: "Required fields (transaction_id, payment_method, amount) are missing!" });
@@ -157,7 +159,7 @@ exports.processPayment = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const txQuery = 'SELECT total_amount, transaction_status FROM rental_transactions WHERE transaction_id = $1';
+        const txQuery = 'SELECT total_amount, transaction_status, user_id FROM rental_transactions WHERE transaction_id = $1';
         const txResult = await client.query(txQuery, [transaction_id]);
 
         if (txResult.rows.length === 0) {
@@ -165,6 +167,11 @@ exports.processPayment = async (req, res) => {
         }
 
         const transaction = txResult.rows[0];
+
+        if (transaction.user_id !== userId) {
+            throw new Error('UNAUTHORIZED_PAYMENT');
+        }
+
         if (transaction.transaction_status !== 'pending') {
             throw new Error('NOT_PENDING');
         }
@@ -212,6 +219,7 @@ exports.processPayment = async (req, res) => {
         await client.query('ROLLBACK');
         console.error("Payment Transaction Error:", error.message);
 
+        if (error.message === 'UNAUTHORIZED_PAYMENT') return res.status(403).json({ message: "Akses ditolak: Anda tidak berhak membayar transaksi orang lain!" });
         if (error.message === 'TX_NOT_FOUND') return res.status(404).json({ message: "Transaction not found." });
         if (error.message === 'NOT_PENDING') return res.status(400).json({ message: "Transaction is already paid or cancelled." });
         if (error.message === 'INSUFFICIENT_FUNDS') return res.status(400).json({ message: "Payment amount is less than the total bill." });
@@ -220,7 +228,7 @@ exports.processPayment = async (req, res) => {
     } finally {
         client.release();
     }
-}
+};
 
 // Pengembalian mobil
 exports.returnCar = async (req, res) => {
@@ -229,6 +237,12 @@ exports.returnCar = async (req, res) => {
     try {
         const { rental_detail_id } = req.params;
 
+        const currentUserId = req.user?.userId;
+
+        if (!currentUserId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
+
         if (!rental_detail_id) {
             return res.status(400).json({ message: "Rental detail ID is required!" });
         }
@@ -236,10 +250,11 @@ exports.returnCar = async (req, res) => {
         await client.query('BEGIN');
 
         const detailQuery = `
-            SELECT rd.transaction_id, rd.car_id, rd.end_date, rd.actual_return_date, rd.price_per_day_at_booking, rt.transaction_status
-            FROM rental_details rd
-            JOIN rental_transactions rt ON rd.transaction_id = rt.transaction_id
-            WHERE rd.rental_detail_id = $1
+        SELECT rd.transaction_id, rd.car_id, rd.end_date, rd.actual_return_date, rd.price_per_day_at_booking, rt.transaction_status,
+            rt.user_id --
+        FROM rental_details rd
+        JOIN rental_transactions rt ON rd.transaction_id = rt.transaction_id
+        WHERE rd.rental_detail_id = $1
         `;
         const detailResult = await client.query(detailQuery, [rental_detail_id]);
 
@@ -248,6 +263,10 @@ exports.returnCar = async (req, res) => {
         }
 
         const rental = detailResult.rows[0];
+
+        if (rental.user_id !== currentUserId) {
+            return res.status(403).json({ message: "Akses ditolak: Anda tidak berhak mengembalikan mobil orang lain!" });
+        }
 
         if (rental.actual_return_date) {
             throw new Error('ALREADY_RETURNED');
@@ -266,15 +285,15 @@ exports.returnCar = async (req, res) => {
 
         const actualReturnDate = new Date();
         const endDate = new Date(rental.end_date);
-        
+
         let penaltyAmount = 0;
         let lateDays = 0;
 
         if (actualReturnDate > endDate) {
             const diffTime = Math.abs(actualReturnDate - endDate);
-            lateDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Konversi miliseconds ke hitungan hari
-            
-            penaltyAmount = lateDays * rental.price_per_day_at_booking; // Perhitungan denda
+            lateDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            penaltyAmount = lateDays * rental.price_per_day_at_booking;
 
             const penaltyQuery = `
                 INSERT INTO penalties (rental_detail_id, penalty_type, amount, description, is_paid)
@@ -328,12 +347,10 @@ exports.returnCar = async (req, res) => {
 // Mengambil riwayat reservasi milik borrower
 exports.getBorrowerReservations = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id; 
+        const userId = req.user?.userId; 
 
         if (!userId) {
-            return res.status(400).json({ message: "User ID is required for testing!" });
+            return res.status(401).json({ message: "Unauthorized: Missing user authentication context." });
         }
 
         const query = `
@@ -356,7 +373,7 @@ exports.getBorrowerReservations = async (req, res) => {
             WHERE rt.user_id = $1
             ORDER BY rt.booking_date DESC;
         `;
-        
+
         const result = await pool.query(query, [userId]);
 
         res.status(200).json({
@@ -370,16 +387,13 @@ exports.getBorrowerReservations = async (req, res) => {
     }
 };
 
-// GET /api/borrower/penalties
 // Mengambil daftar denda dan total tagihan denda yang belum dibayar
 exports.getBorrowerPenalties = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id; 
+        const userId = req.user?.userId; 
 
         if (!userId) {
-            return res.status(400).json({ message: "User ID is required for testing!" });
+            return res.status(401).json({ message: "Unauthorized: Missing user authentication context." });
         }
 
         const query = `
@@ -401,10 +415,9 @@ exports.getBorrowerPenalties = async (req, res) => {
             WHERE rt.user_id = $1
             ORDER BY p.is_paid ASC, rd.actual_return_date DESC;
         `;
-        
+
         const result = await pool.query(query, [userId]);
 
-        // Kalkulasi total denda yang belum dibayar (is_paid = false)
         let totalUnpaid = 0;
         const formattedPenalties = result.rows.map(row => {
             const amountNum = parseFloat(row.amount);
@@ -430,4 +443,3 @@ exports.getBorrowerPenalties = async (req, res) => {
         res.status(500).json({ message: "Internal server error." });
     }
 };
-

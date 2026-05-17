@@ -27,7 +27,7 @@ app.use(express.json());
 
 app.use("/api/auth", require("./routes/auth.routes.js"));
 
-app.use("/api/users", require("./routes/users.routes.js"));
+// app.use("/api/users", require("./routes/users.routes.js"));
 
 // Borrower
 app.use("/api/borrower", require("./routes/borrower.routes"));
