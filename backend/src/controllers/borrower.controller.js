@@ -3,28 +3,62 @@ const { pool } = require('../config/supabase');
 // Mengambil mobil yang dapat disewa
 exports.getAvailableCars = async (req, res) => {
     try {
-        const query = `
+        const { brand, transmission, location } = req.query; 
+
+        let query = `
             SELECT 
-                f.car_id, 
-                f.license_plate, 
-                f.color, 
-                f.image_url, 
-                m.brand, 
-                m.model_name, 
-                m.transmission, 
-                m.capacity, 
-                m.base_daily_price
+                f.car_id as id,
+                f.color,
+                f.image_url as img,
+                f.location,
+                f.has_insurance as "hasInsurance",
+                f.rating,
+                f.reviews,
+                m.brand,
+                m.model_name as model,
+                m.type,
+                m.transmission,
+                m.capacity as seats,
+                m.base_daily_price as price,
+                m.is_keyless as "isKeyless"
             FROM fleet_cars f
             JOIN car_models m ON f.model_id = m.model_id
             WHERE f.status = 'available'
-            ORDER BY m.brand ASC, m.model_name ASC;
         `;
         
-        const result = await pool.query(query);
+        const values = [];
+        let counter = 1;
 
-        res.status(200).json({
-            message: "Successfully retrieved available cars.",
-            data: result.rows
+        if (brand && brand !== 'All') {
+            query += ` AND m.brand ILIKE $${counter}`;
+            values.push(`%${brand}%`);
+            counter++;
+        }
+        if (transmission && transmission !== 'All') {
+            query += ` AND m.transmission = $${counter}`;
+            values.push(transmission);
+            counter++;
+        }
+        if (location && location !== 'All') {
+            query += ` AND f.location ILIKE $${counter}`;
+            values.push(`%${location}%`);
+            counter++;
+        }
+
+        query += ` ORDER BY m.brand ASC, m.model_name ASC;`;
+
+        const result = await pool.query(query, values);
+
+        const formattedData = result.rows.map(car => ({
+            ...car,
+            price: parseFloat(car.price),
+            rating: parseFloat(car.rating).toFixed(1),
+            reviews: parseInt(car.reviews)
+        }));
+
+        res.status(200).json({ 
+            message: "Successfully retrieved available cars.", 
+            data: formattedData 
         });
 
     } catch (error) {
@@ -34,60 +68,56 @@ exports.getAvailableCars = async (req, res) => {
 };
 
 // Membuat atau melakukan sewa
+// Membuat atau melakukan sewa
 exports.createReservation = async (req, res) => {
     const client = await pool.connect(); 
 
     try {
-        const { user_id, car_id, start_date, end_date } = req.body;
+        // Tangkap variabel baru dari frontend
+        const { user_id, car_id, start_date, end_date, total_days, add_ons, base_price_per_day, grand_total_payment } = req.body;
 
-        if (!user_id || !car_id || !start_date || !end_date) {
-            return res.status(400).json({ message: "Required fields (user_id, car_id, start_date, end_date) are missing!" });
+        // Memastikan variabel harga baru divalidasi
+        if (!user_id || !car_id || !start_date || !end_date || grand_total_payment === undefined || base_price_per_day === undefined) {
+            return res.status(400).json({ message: "Required fields are missing!" });
+        }
+
+        // Validasi tanggal
+        const startDateObj = new Date(start_date);
+        const endDateObj = new Date(end_date);
+
+        if (startDateObj >= endDateObj) {
+            return res.status(400).json({ message: "End date must be strictly after start date!" });
+        }
+        if (startDateObj < new Date(new Date().setHours(0,0,0,0))) { // Memastikan tidak menyewa di hari yang sudah lewat
+            return res.status(400).json({ message: "Cannot book a car in the past!" });
         }
 
         await client.query('BEGIN'); 
 
-        const carQuery = `
-            SELECT f.car_id, f.status, m.base_daily_price 
-            FROM fleet_cars f
-            JOIN car_models m ON f.model_id = m.model_id
-            WHERE f.car_id = $1
-        `;
+        // FOR UPDATE untuk mencegah race condition
+        const carQuery = `SELECT status FROM fleet_cars WHERE car_id = $1 FOR UPDATE`;
         const carResult = await client.query(carQuery, [car_id]);
 
-        if (carResult.rows.length === 0) {
-            throw new Error('CAR_NOT_FOUND');
-        }
+        if (carResult.rows.length === 0) throw new Error('CAR_NOT_FOUND');
+        if (carResult.rows[0].status !== 'available') throw new Error('CAR_NOT_AVAILABLE');
 
-        const car = carResult.rows[0];
-        if (car.status !== 'available') {
-            throw new Error('CAR_NOT_AVAILABLE');
-        }
-
-        // Perhitungan durasi penyewaan
-        const start = new Date(start_date);
-        const end = new Date(end_date);
-        const diffTime = Math.abs(end - start);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        
-        // Minimal durasi sewa adalah 1 hari
-        const totalDays = Math.max(1, diffDays);
-        
-        const totalAmount = totalDays * car.base_daily_price;
-
+        // Insert ke transaksi dengan grand_total_payment dan add_ons JSONB
         const txQuery = `
-            INSERT INTO rental_transactions (user_id, booking_date, total_amount, transaction_status)
-            VALUES ($1, NOW(), $2, 'pending')
+            INSERT INTO rental_transactions (user_id, booking_date, total_amount, transaction_status, add_ons)
+            VALUES ($1, NOW(), $2, 'pending', $3)
             RETURNING transaction_id;
         `;
-        const txResult = await client.query(txQuery, [user_id, totalAmount]);
+        // Pastikan add_ons dikonversi ke JSON string jika tidak otomatis terbaca
+        const txResult = await client.query(txQuery, [user_id, grand_total_payment, JSON.stringify(add_ons || {})]);
         const transactionId = txResult.rows[0].transaction_id;
 
+        // Insert ke rental details menggunakan base_price_per_day dari frontend
         const detailQuery = `
             INSERT INTO rental_details (transaction_id, car_id, start_date, end_date, price_per_day_at_booking)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *;
         `;
-        await client.query(detailQuery, [transactionId, car_id, start_date, end_date, car.base_daily_price]);
+        await client.query(detailQuery, [transactionId, car_id, start_date, end_date, base_price_per_day]);
 
         await client.query('COMMIT'); 
 
@@ -95,8 +125,7 @@ exports.createReservation = async (req, res) => {
             message: "Reservation successfully created!",
             data: {
                 transaction_id: transactionId,
-                total_amount: totalAmount,
-                total_days: totalDays,
+                total_amount: grand_total_payment,
                 status: 'pending'
             }
         });
@@ -340,3 +369,4 @@ exports.getBorrowerReservations = async (req, res) => {
         res.status(500).json({ message: "Internal server error." });
     }
 };
+
