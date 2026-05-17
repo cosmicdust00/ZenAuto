@@ -1,29 +1,70 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 import { Radio, Play, Square, AlertOctagon } from 'lucide-react';
 import { PatchCard } from '../../components/ui/PatchCard.tsx';
 
 export default function GpsSimulator() {
   const [isSimulating, setIsSimulating] = useState(false);
-  const [logs, setLogs] = useState<{time: string, lat: string, lng: string, device: string}[]>([]);
-  const [coords, setCoords] = useState({ lat: -6.2088, lng: 106.8456 });
-  const [selectedDevice, setSelectedDevice] = useState('GPS-001');
+  const [logs, setLogs] = useState<{time: string, lat: string, lng: string, device: string, status: string}[]>([]);
+  
+  // Titik awal diatur ke sekitar wilayah Bogor
+  const [coords, setCoords] = useState({ lat: -6.59503, lng: 106.81663 });
+  
+  // Menggunakan Input Teks karena ID Mobil di database adalah UUID (bukan sekadar GPS-001)
+  const [selectedDevice, setSelectedDevice] = useState('');
+
+  // Trik useRef: Agar setInterval selalu mendapatkan nilai koordinat terbaru tanpa perlu me-reset interval
+  const coordsRef = useRef(coords);
+  useEffect(() => {
+    coordsRef.current = coords;
+  }, [coords]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (isSimulating) {
-      interval = setInterval(() => {
-        const newLat = (coords.lat + (Math.random() - 0.5) * 0.001).toFixed(5);
-        const newLng = (coords.lng + (Math.random() - 0.5) * 0.001).toFixed(5);
+    
+    // Hanya berjalan jika simulasi aktif dan UUID mobil sudah diisi
+    if (isSimulating && selectedDevice.trim() !== '') {
+      interval = setInterval(async () => {
+        const currentCoords = coordsRef.current;
+        
+        // Mensimulasikan pergerakan mobil (bergeser sedikit setiap 3 detik)
+        const newLat = (currentCoords.lat + (Math.random() - 0.5) * 0.0005).toFixed(6);
+        const newLng = (currentCoords.lng + (Math.random() - 0.5) * 0.0005).toFixed(6);
+        
         setCoords({ lat: parseFloat(newLat), lng: parseFloat(newLng) });
         
+        const timeNow = new Date().toLocaleTimeString();
+        let statusLog = "→ 201 CREATED (Appended to Bucket)";
+
+       try {
+          // API MongoDB
+          await axios.post('http://localhost:5000/api/telemetry/locations', {
+            car_id: selectedDevice.trim(),
+            latitude: parseFloat(newLat),
+            longitude: parseFloat(newLng)
+          });
+        } catch (error: any) {
+          console.error("Telemetry Broadcast Error:", error);
+          statusLog = `→ ERROR: ${error.response?.status || 'Network Failure'}`;
+        }
+
         setLogs(prev => [
-          { time: new Date().toLocaleTimeString(), lat: newLat, lng: newLng, device: selectedDevice },
-          ...prev.slice(0, 9) // Keep last 10
+          { time: timeNow, lat: newLat, lng: newLng, device: selectedDevice, status: statusLog },
+          ...prev.slice(0, 19)
         ]);
-      }, 3000); // Send every 3 seconds for demo
+      }, 3000); // Mengirim data setiap 3 detik
     }
+    
     return () => clearInterval(interval);
-  }, [isSimulating, coords, selectedDevice]);
+  }, [isSimulating, selectedDevice]);
+
+  const handleStartStop = () => {
+    if (!selectedDevice.trim()) {
+      alert("PLEASE ENTER A VALID CAR UUID BEFORE BROADCASTING.");
+      return;
+    }
+    setIsSimulating(!isSimulating);
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-4xl mx-auto">
@@ -44,25 +85,24 @@ export default function GpsSimulator() {
           </div>
 
           <div>
-            <label className="block font-black text-[#1D2B45] uppercase tracking-wider mb-2">Target Vehicle / Device ID</label>
-            <select 
+            <label className="block font-black text-[#1D2B45] uppercase tracking-wider mb-2">Target Vehicle UUID</label>
+            <input 
+              type="text"
+              placeholder="Paste Car UUID here (e.g., 550e8400-e29b-...)"
               value={selectedDevice}
               onChange={(e) => setSelectedDevice(e.target.value)}
               disabled={isSimulating}
-              className="w-full border-2 border-[#1D2B45] shadow-[4px_4px_0px_0px_#1D2B45] p-3 font-bold text-[#1D2B45] bg-[#F8F8F6] focus:outline-none focus:bg-[#EBE6D9] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="GPS-001">Toyota Avanza (GPS-001)</option>
-              <option value="GPS-002">Honda Brio (GPS-002)</option>
-            </select>
+              className="w-full border-2 border-[#1D2B45] shadow-[4px_4px_0px_0px_#1D2B45] p-3 font-mono font-bold text-[#1D2B45] bg-[#F8F8F6] focus:outline-none focus:bg-[#EBE6D9] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block font-black text-[#1D2B45] uppercase tracking-wider mb-2">Start LAT</label>
+              <label className="block font-black text-[#1D2B45] uppercase tracking-wider mb-2">Current LAT</label>
               <input type="number" value={coords.lat} readOnly className="w-full border-2 border-[#1D2B45] shadow-[4px_4px_0px_0px_#1D2B45] p-3 font-mono font-bold text-[#5E4E46] bg-[#EBE6D9] outline-none" />
             </div>
             <div>
-              <label className="block font-black text-[#1D2B45] uppercase tracking-wider mb-2">Start LNG</label>
+              <label className="block font-black text-[#1D2B45] uppercase tracking-wider mb-2">Current LNG</label>
               <input type="number" value={coords.lng} readOnly className="w-full border-2 border-[#1D2B45] shadow-[4px_4px_0px_0px_#1D2B45] p-3 font-mono font-bold text-[#5E4E46] bg-[#EBE6D9] outline-none" />
             </div>
           </div>
@@ -70,14 +110,14 @@ export default function GpsSimulator() {
           <div className="pt-4 mt-auto">
             {!isSimulating ? (
               <button 
-                onClick={() => setIsSimulating(true)}
+                onClick={handleStartStop}
                 className="w-full bg-[#1D2B45] text-[#F8F8F6] font-black uppercase tracking-widest py-4 border-2 border-[#1D2B45] shadow-[4px_4px_0px_0px_#1D2B45] active:shadow-[0px_0px_0px_0px_#1D2B45] active:translate-y-[4px] active:translate-x-[4px] hover:bg-[#295A8E] transition-all flex justify-center items-center space-x-2"
               >
                 <Play fill="currentColor" size={20} /> <span>Start Broadcasting</span>
               </button>
             ) : (
               <button 
-                onClick={() => setIsSimulating(false)}
+                onClick={handleStartStop}
                 className="w-full bg-[#ef4444] text-[#F8F8F6] font-black uppercase tracking-widest py-4 border-2 border-[#1D2B45] shadow-[4px_4px_0px_0px_#1D2B45] active:shadow-[0px_0px_0px_0px_#1D2B45] active:translate-y-[4px] active:translate-x-[4px] hover:bg-[#b91c1c] transition-all flex justify-center items-center space-x-2 animate-pulse"
               >
                 <Square fill="currentColor" size={20} /> <span>Stop Broadcasting</span>
@@ -97,8 +137,8 @@ export default function GpsSimulator() {
             {logs.map((log, i) => (
               <div key={i} className="opacity-90 leading-tight">
                 <span className="text-[#EBE6D9] font-bold">[{log.time}]</span> <span className="text-[#4F6355] font-black">POST</span> /api/telemetry 
-                <br/><span className="pl-4 text-[#295A8E] font-bold">payload:</span> {'{'} device: '{log.device}', lat: {log.lat}, lng: {log.lng} {'}'}
-                <br/><span className="pl-4 text-[#F8F8F6] font-black">→ 201 CREATED (Appended to Bucket)</span>
+                <br/><span className="pl-4 text-[#295A8E] font-bold">payload:</span> {'{'} device: '{log.device.substring(0,8)}...', lat: {log.lat}, lng: {log.lng} {'}'}
+                <br/><span className={`pl-4 font-black ${log.status.includes('ERROR') ? 'text-rose-500' : 'text-[#F8F8F6]'}`}>{log.status}</span>
               </div>
             ))}
           </div>

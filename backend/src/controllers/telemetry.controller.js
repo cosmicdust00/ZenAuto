@@ -1,24 +1,24 @@
 const VehicleTelemetry = require('../models/telemetry.model');
-const { pool } = require('../config/supabase'); // PG untuk cek status mobil
+const { pool } = require('../config/supabase'); 
 
-// Menyimpan koordinat GPS ke MongoDB (Bucket Pattern)
+// Menyimpan koordinat GPS ke MongoDB
 exports.saveLocation = async (req, res) => {
     try {
-        const { gps_device_id, latitude, longitude, timestamp } = req.body;
+        const { car_id, latitude, longitude, timestamp } = req.body;
 
-        if (!gps_device_id || latitude === undefined || longitude === undefined) {
-            return res.status(400).json({ message: "Required fields (gps_device_id, latitude, longitude) are missing!" });
+        if (!car_id || latitude === undefined || longitude === undefined) {
+            return res.status(400).json({ message: "Required fields (car_id, latitude, longitude) are missing!" });
         }
 
         const checkQuery = `
-            SELECT car_id, status 
+            SELECT car_id, status, gps_device_id 
             FROM fleet_cars 
-            WHERE gps_device_id = $1
+            WHERE car_id = $1
         `;
-        const checkResult = await pool.query(checkQuery, [gps_device_id]);
+        const checkResult = await pool.query(checkQuery, [car_id]);
 
         if (checkResult.rows.length === 0) {
-            return res.status(404).json({ message: "Unregistered GPS device." });
+            return res.status(404).json({ message: "Unregistered vehicle UUID." });
         }
 
         const car = checkResult.rows[0];
@@ -26,26 +26,20 @@ exports.saveLocation = async (req, res) => {
             return res.status(202).json({ message: "Location ping ignored. Car is not currently rented." });
         }
 
-        // Jika alat GPS tidak mengirim waktu, gunakan waktu server saat ini
         const currentTime = timestamp ? new Date(timestamp) : new Date();
-        
-        // Buat 1 bucket (ember) per jam.
-        // Contoh: Jika sekarang jam 14:23:45, embernya bernama "14:00:00"
         const bucketStart = new Date(currentTime);
         bucketStart.setMinutes(0, 0, 0); 
         
         const bucketEnd = new Date(bucketStart);
-        bucketEnd.setHours(bucketStart.getHours() + 1); // Batas akhir ember: "15:00:00"
+        bucketEnd.setHours(bucketStart.getHours() + 1); 
 
-        // 3. Masukkan ke MongoDB menggunakan metode upsert (update or insert)
         await VehicleTelemetry.findOneAndUpdate(
             {
                 car_id: car.car_id,
                 bucket_start: bucketStart,
-                count: { $lt: 60 } // Cari ember jam ini yang isinya belum mencapai 60 titik
+                count: { $lt: 60 } 
             },
             {
-                // Push data baru ke dalam array measurements
                 $push: {
                     measurements: {
                         timestamp: currentTime,
@@ -53,18 +47,13 @@ exports.saveLocation = async (req, res) => {
                         longitude: longitude
                     }
                 },
-                // Tambah nilai count sebanyak +1
                 $inc: { count: 1 },
-                // Set data dasar hanya jika ember baru terbuat
                 $setOnInsert: {
-                    gps_device_id: gps_device_id,
+                    gps_device_id: car.gps_device_id || 'UNKNOWN-GPS', 
                     bucket_end: bucketEnd
                 }
             },
-            { 
-                upsert: true, // Jika ember belum ada, buat baru
-                new: true 
-            }
+            { upsert: true, new: true }
         );
 
         res.status(201).json({ message: "Telemetry data successfully recorded." });
@@ -78,18 +67,18 @@ exports.saveLocation = async (req, res) => {
 // Mengambil lokasi terbaru untuk ditampilkan di peta leaflet
 exports.getLatestLocation = async (req, res) => {
     try {
+        
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
         const { car_id } = req.params;
 
-        // Cari bucket terbaru untuk mobil ini (urutkan berdasarkan waktu turun)
         const latestBucket = await VehicleTelemetry.findOne({ car_id: car_id })
-            .sort({ bucket_start: -1 });
+            .sort({ bucket_start: -1, _id: -1 }); 
 
         if (!latestBucket || latestBucket.measurements.length === 0) {
             return res.status(404).json({ message: "No telemetry data found for this car." });
         }
 
-        // Karena data di dalam array measurements selalu bertambah ke bawah (push),
-        // Lokasi terbarunya adalah elemen paling terakhir di dalam array tersebut.
         const latestMeasurement = latestBucket.measurements[latestBucket.measurements.length - 1];
 
         res.status(200).json({
@@ -105,6 +94,48 @@ exports.getLatestLocation = async (req, res) => {
 
     } catch (error) {
         console.error("Error in getLatestLocation:", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+};
+
+// GET /api/telemetry/history/:car_id
+exports.getTrajectoryHistory = async (req, res) => {
+    try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        
+        const { car_id } = req.params;
+        const { start, end } = req.query;
+
+        if (!start || !end) {
+            return res.status(400).json({ message: "Start and End parameters are required." });
+        }
+
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        // Serahkan penyaringan waktu sepenuhnya pada query MongoDB
+        const buckets = await VehicleTelemetry.find({
+            car_id: car_id,
+            bucket_start: { $lte: endDate },
+            bucket_end: { $gte: startDate }
+        }).sort({ bucket_start: 1, _id: 1 });
+
+        let trajectoryPath = [];
+        
+        // Rakit koordinat tanpa intervensi filter 'if' JavaScript
+        buckets.forEach(bucket => {
+            bucket.measurements.forEach(m => {
+                trajectoryPath.push([m.latitude, m.longitude]);
+            });
+        });
+
+        res.status(200).json({
+            message: "Successfully compiled historical trajectory path.",
+            data: trajectoryPath
+        });
+
+    } catch (error) {
+        console.error("Error in getTrajectoryHistory:", error);
         res.status(500).json({ message: "Internal server error." });
     }
 };
