@@ -24,6 +24,7 @@ exports.getCarModels = async (req, res) => {
 exports.addFleetCar = async (req, res) => {
     try {
         const userId = req.user?.userId;
+        
         if (!userId) {
             return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
         }
@@ -34,13 +35,23 @@ exports.addFleetCar = async (req, res) => {
             return res.status(400).json({ message: "Required fields (model_id, license_plate, color) are missing!" });
         }
 
+        const licensePlateRegex = /^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$/;
+        const uppercasePlate = license_plate.trim().toUpperCase();
+
+        if (!licensePlateRegex.test(uppercasePlate)) {
+            return res.status(400).json({ 
+                message: "Format plat nomor tidak valid! Gunakan format standar Indonesia dengan spasi (Contoh: B 1234 XYZ)" 
+            });
+        }
+
         const query = `
             INSERT INTO fleet_cars (model_id, user_id, license_plate, color, status, image_url, gps_device_id)
             VALUES ($1, $2, $3, $4, 'available', $5, $6)
             RETURNING *;
         `;
         
-        const values = [model_id, userId, license_plate, color, image_url, gps_device_id || null];
+        // Gunakan uppercasePlate untuk disimpan ke database
+        const values = [model_id, userId, uppercasePlate, color, image_url, gps_device_id || null];
         const result = await pool.query(query, values);
 
         res.status(201).json({

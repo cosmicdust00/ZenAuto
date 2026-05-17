@@ -1,7 +1,11 @@
-// const express = require("express");
-// const router = express.Router();
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/user.controller');
+const { authorizeToken } = require('../middlewares/auth');
 
-// router.get("/profile")
-// router.put("/profile")
+router.use(authorizeToken);
 
-// module.exports = router;
+router.get('/profile', userController.getProfile);
+router.put('/profile', userController.updateProfile);
+
+module.exports = router;

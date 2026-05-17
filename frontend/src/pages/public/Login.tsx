@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, Navigate } from 'react-router-dom'; 
+import axios from 'axios'; 
 import { useAuth } from '../../context/AuthContext';
-import { Mail, ShieldCheck, LogIn } from 'lucide-react';
+import { Mail, ShieldCheck, LogIn, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  
+  // Ekstrak fungsi login dan nilai token dari context
+  const { login, token } = useAuth(); 
   const navigate = useNavigate();
+
+  // Jika token JWT sudah ada (user sudah login), cegah render form dan langsung lempar ke dasbor
+  if (token) {
+    return <Navigate to="/borrower/dashboard" replace />; 
+  }
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,37 +25,45 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      // Menembak endpoint otentikasi backend
+      const response = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password
       });
 
-      const resData = await response.json();
-      if (!response.ok) throw new Error(resData.message || 'Invalid system credentials.');
+      // Backend diharapkan mengembalikan { token, user }
+      const { token, user } = response.data;
 
-      login(resData.token, resData.user);
-      navigate('/borrower');
+      if (!token || !user) {
+        throw new Error('Invalid authentication response from server.');
+      }
+
+      // Memasukkan token dan profil asli dari database ke dalam Context/localStorage
+      login(token, user);
+
+      // Jika user belum mengisi nomor SIM atau rekening, arahkan ke profile settings.
+      // Jika sudah, arahkan ke dasbor.
+      if (!user.license_card_number && !user.bank_account) {
+        navigate('/profile');
+      } else {
+        navigate('/borrower/dashboard'); // Sesuaikan path ini dengan router App.tsx Anda
+      }
+
     } catch (err: any) {
-      console.warn("Backend link unreachable. Activating local sandbox state profile for demo testing...");
-      login('mock-token-session-jwt', {
-        user_id: 'usr-88192-vip',
-        full_name: 'Sabbia Meilandri',
-        email: email || 'sabbia@example.com',
-        phone_number: '081299882233',
-        id_card_number: '3273012345678901',
-        license_card_number: 'A-9988123',
-        bank_account: 'BCA - 88102391',
-        created_at: new Date().toISOString()
-      });
-      navigate('/borrower');
+      console.error("Login Authentication Error:", err);
+      // Menangkap pesan error spesifik dari backend dan menampilkannya di UI
+      setError(
+        err.response?.data?.message || 
+        err.message || 
+        'System endpoint unreachable. Please check backend runtime.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-[calc(100vh-76px)] bg-[#F0E9E0] flex items-center justify-center p-6">
+    <div className="min-h-[calc(100vh-76px)] bg-[#F0E9E0] flex items-center justify-center p-6 animate-fade-in">
       <div className="w-full max-w-md bg-white border-4 border-[#0F1525] p-8 shadow-[8px_8px_0px_0px_#0F1525] relative">
         <div className="absolute -top-4 left-6 bg-yellow-400 border-2 border-black font-black text-xs px-3 py-1 uppercase tracking-wider shadow-[2px_2px_0px_#000]">
           Security Firewall Gateway
@@ -58,9 +74,11 @@ export default function Login() {
           <p className="text-xs font-bold text-[#4A5F68] uppercase tracking-wide">Authorize system transaction tokens</p>
         </div>
 
+        {/* Panel Notifikasi Error Dinamis */}
         {error && (
-          <div className="bg-rose-100 border-2 border-rose-600 text-rose-700 p-3 font-bold text-xs uppercase mb-4">
-            ⚠️ Error context: {error}
+          <div className="bg-rose-100 border-2 border-rose-600 text-rose-700 p-3 font-black text-[10px] uppercase tracking-wider mb-4 flex items-start gap-2">
+            <span className="text-rose-600">⚠️</span>
+            <span>{error}</span>
           </div>
         )}
 
@@ -74,8 +92,9 @@ export default function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-3 pl-11 border-3 border-[#0F1525] bg-white font-bold focus:outline-none focus:bg-yellow-50"
+                className="w-full p-3 pl-11 border-3 border-[#0F1525] bg-white font-bold focus:outline-none focus:bg-yellow-50 transition-colors"
                 placeholder="borrower@zenauto.com"
+                disabled={loading}
               />
             </div>
           </div>
@@ -89,8 +108,9 @@ export default function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-3 pl-11 border-3 border-[#0F1525] bg-white font-bold focus:outline-none focus:bg-yellow-50"
+                className="w-full p-3 pl-11 border-3 border-[#0F1525] bg-white font-bold focus:outline-none focus:bg-yellow-50 transition-colors"
                 placeholder="••••••••"
+                disabled={loading}
               />
             </div>
           </div>
@@ -98,14 +118,17 @@ export default function Login() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full neo-btn bg-[#062954] text-white p-4 font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 rounded-none"
+            className={`w-full neo-btn text-white p-4 font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 rounded-none transition-all
+              ${loading ? 'bg-gray-500 cursor-not-allowed border-gray-600 shadow-none' : 'bg-[#062954] hover:bg-[#1D2B45] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none shadow-[4px_4px_0px_#000] border-2 border-black'}
+            `}
           >
-            <LogIn className="w-5 h-5" /> {loading ? 'Validating Token...' : 'Authorize Session ➔'}
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />} 
+            {loading ? 'Validating Token...' : 'Authorize Session ➔'}
           </button>
         </form>
 
-        <div className="text-center font-bold text-xs text-[#324858] mt-6 border-t-2 border-dashed border-[#0F1525] pt-4 uppercase">
-          New System Entity? <Link to="/register" className="underline text-[#062954] hover:text-black">Register Identity Record</Link>
+        <div className="text-center font-bold text-xs text-[#324858] mt-6 border-t-2 border-dashed border-[#0F1525] pt-4 uppercase tracking-wide">
+          New System Entity? <Link to="/register" className="underline text-[#062954] hover:text-rose-500 transition-colors ml-1">Register Identity Record</Link>
         </div>
       </div>
     </div>

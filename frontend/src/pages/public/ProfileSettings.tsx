@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { User, CreditCard, Landmark, FileText, CheckCircle } from 'lucide-react';
+import { User, CreditCard, Landmark, FileText, CheckCircle, Loader2, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 export default function ProfileSettings() {
-  // AMAN: Menggunakan fallback {} agar tidak crash jika context belum siap
-  const authContext = useAuth() || {};
-  const { user, token } = authContext;
+  // Mengekstrak token, data pengguna, dan fungsi pembaruan state lokal
+  const { user, token, updateProfileState } = useAuth();
   const navigate = useNavigate();
   
   // State form
@@ -19,7 +19,7 @@ export default function ProfileSettings() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // AMAN: Hanya isi form JIKA data user sudah ada
+  // Mengisi form secara dinamis berdasarkan data JWT / database saat ini
   useEffect(() => {
     if (user) {
       setFullName(user.full_name || 'Guest User');
@@ -29,11 +29,8 @@ export default function ProfileSettings() {
     }
   }, [user]);
 
-  // ==========================================================
-  // FITUR ANTI-LAYAR-PUTIH: 
-  // Jika user belum login, tampilkan pesan suruh login
-  // ==========================================================
-  if (!user) {
+  // Proteksi rute
+  if (!user || !token) {
     return (
       <div className="min-h-screen bg-[#F0E9E0] flex flex-col items-center justify-center p-6">
         <div className="bg-white border-4 border-black p-10 max-w-lg w-full text-center shadow-[8px_8px_0px_#0F1525] rounded-2xl">
@@ -41,7 +38,7 @@ export default function ProfileSettings() {
           <p className="font-bold text-gray-500 mb-6">You must be logged in to view and edit your profile settings.</p>
           <button 
             onClick={() => navigate('/login')}
-            className="w-full neo-btn bg-yellow-400 text-black px-6 py-4 font-black uppercase tracking-widest border-2 border-black rounded-xl shadow-[4px_4px_0px_#000]"
+            className="w-full neo-btn bg-yellow-400 text-black px-6 py-4 font-black uppercase tracking-widest border-2 border-black rounded-xl shadow-[4px_4px_0px_#000] hover:translate-y-1 hover:shadow-none transition-all"
           >
             Go to Login Page
           </button>
@@ -57,27 +54,31 @@ export default function ProfileSettings() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/users/profile', {
-        method: 'PUT',
+      // Eksekusi HTTP PUT ke backend dengan Header JWT
+      const response = await axios.put('http://localhost:5000/api/users/profile', {
+        license_card_number: licenseNumber,
+        bank_account: bankAccount
+      }, {
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          license_card_number: licenseNumber,
-          bank_account: bankAccount
-        })
+          Authorization: `Bearer ${token}`
+        }
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update profile constraints.');
+      // Perbarui state AuthContext agar komponen lain (seperti Checkout) tahu bahwa user ini sudah memiliki nomor SIM tanpa perlu memuat ulang halaman.
+      updateProfileState({
+        license_card_number: licenseNumber,
+        bank_account: bankAccount
+      });
 
       setIsSuccess(true);
       setStatusMessage('PROFILE RECORDS DISPATCHED & INSTANTIATED SUCCESSFULLY!');
     } catch (err: any) {
-      console.warn("Backend server offline. Simulating profile cache local registry update...");
-      setIsSuccess(true);
-      setStatusMessage('LOCAL CACHE PROFILE SYNCHRONIZED SUCCESSFULLY!');
+      console.error("Profile Update Error:", err);
+      setIsSuccess(false);
+      setStatusMessage(
+        err.response?.data?.message || 
+        'System endpoint unreachable. Profile update failed.'
+      );
     } finally {
       setLoading(false);
     }
@@ -98,9 +99,13 @@ export default function ProfileSettings() {
           </p>
         </div>
 
+        {/* Panel Notifikasi Dinamis (Sukses / Gagal) */}
         {statusMessage && (
-          <div className={`border-2 rounded-xl p-4 font-black text-xs uppercase mb-6 tracking-wide flex items-center gap-2 ${isSuccess ? 'bg-emerald-100 border-emerald-600 text-emerald-800' : 'bg-rose-100 border-rose-600 text-rose-700'}`}>
-            <CheckCircle className="w-5 h-5 flex-shrink-0" /> {statusMessage}
+          <div className={`border-2 rounded-xl p-4 font-black text-xs uppercase mb-6 tracking-wide flex items-center gap-2 
+            ${isSuccess ? 'bg-emerald-100 border-emerald-600 text-emerald-800' : 'bg-rose-100 border-rose-600 text-rose-700'}`}
+          >
+            {isSuccess ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertTriangle className="w-5 h-5 flex-shrink-0" />}
+            {statusMessage}
           </div>
         )}
 
@@ -147,6 +152,7 @@ export default function ProfileSettings() {
                 value={licenseNumber}
                 onChange={(e) => setLicenseNumber(e.target.value)}
                 className="w-full p-3 pl-12 rounded-xl border-3 border-[#0F1525] bg-white font-black text-sm text-[#0F1525] focus:outline-none focus:bg-yellow-50 transition-colors"
+                disabled={loading}
               />
             </div>
           </div>
@@ -164,6 +170,7 @@ export default function ProfileSettings() {
                 value={bankAccount}
                 onChange={(e) => setBankAccount(e.target.value)}
                 className="w-full p-3 pl-12 rounded-xl border-3 border-[#0F1525] bg-white font-black text-sm text-[#0F1525] focus:outline-none focus:bg-yellow-50 transition-colors"
+                disabled={loading}
               />
             </div>
           </div>
@@ -171,8 +178,11 @@ export default function ProfileSettings() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full neo-btn bg-[#0F1525] text-white p-4 font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 rounded-xl border-2 border-black shadow-[4px_4px_0px_#000] hover:translate-y-1 hover:shadow-none transition-all mt-4"
+            className={`w-full neo-btn text-white p-4 font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 rounded-xl border-2 border-black transition-all mt-4
+              ${loading ? 'bg-gray-500 shadow-none cursor-not-allowed border-gray-600' : 'bg-[#0F1525] shadow-[4px_4px_0px_#000] hover:translate-y-1 hover:shadow-none'}
+            `}
           >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
             {loading ? 'Processing Schema...' : 'Save Profile Context ➔'}
           </button>
         </form>

@@ -31,6 +31,8 @@ export default function FleetManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [carModels, setCarModels] = useState<CarModel[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const licensePlateRegex = /^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$/;
   
   const [formData, setFormData] = useState({
     model_id: '',
@@ -123,6 +125,12 @@ export default function FleetManagement() {
     
     if (!formData.model_id || !formData.license_plate || !formData.color || !selectedFile || !token) {
       alert("Fill all data or ensure you are logged in!");
+      return;
+    }
+
+    const uppercasePlate = formData.license_plate.trim().toUpperCase();
+    if (!licensePlateRegex.test(uppercasePlate)) {
+      alert("Format plat nomor tidak valid! Wajib gunakan spasi (Contoh: B 1234 XYZ)");
       return;
     }
 
