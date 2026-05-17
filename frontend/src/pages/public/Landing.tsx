@@ -6,7 +6,7 @@ import {
   CarFront, ArrowRight, Globe, Camera, MessageCircle, 
   ChevronLeft, ChevronRight, Zap, Target, Siren, Timer, ShieldCheck, Cog, Key, RefreshCcw,
   Send, BellRing, CheckCircle2, X, MapPin, Aperture,
-  Video, Share2, Music
+  Video, Share2, Music, LogOut
 } from 'lucide-react';
 
 // Daftar Ikon untuk dirotasi pada data yang ditarik dari database
@@ -28,7 +28,7 @@ const INITIAL_FAQ_CARDS = [
 }));
 
 export default function Landing() {
-  const { token } = useAuth();
+  const { token, user, logout } = useAuth();
 
   const [rotation, setRotation] = useState(0); 
   const [isInteracting, setIsInteracting] = useState(false); 
@@ -107,13 +107,12 @@ export default function Landing() {
       });
     }, { threshold: 0.05, rootMargin: '50px' });
 
-    // Temukan semua kelas 'scroll-target' di dalam DOM dan berikan observer
     document.querySelectorAll('.scroll-target').forEach((el) => {
       observer.observe(el);
     });
 
     return () => observer.disconnect();
-  }, [isLoaded, faqCards]); // Efek dipicu ulang saat data selesai di-load
+  }, [isLoaded, faqCards]);
 
   useEffect(() => {
     const activeFaqItem = faqItemRefs.current[activeIndex];
@@ -213,6 +212,14 @@ export default function Landing() {
     }
   };
 
+  const handleLogoutClick = () => {
+    const confirmLogout = window.confirm("Apakah Anda yakin ingin memutuskan sesi enkripsi JWT dan keluar?");
+    if (confirmLogout) {
+      logout();
+      alert("Sesi berhasil dihapus dari browser local cache.");
+    }
+  };
+
   const currentCard = faqCards[activeIndex] || faqCards[0];
 
   if (!isLoaded) return null;
@@ -280,13 +287,32 @@ export default function Landing() {
             <p className="text-lg text-gray-300 max-w-md font-medium leading-relaxed">
               Experience the ultimate freedom on the road. We provide a seamless, premium car rental experience with a diverse fleet of standard and electric vehicles tailored for your journey.
             </p>
+            
             <div className="flex flex-wrap gap-4 pt-2">
-              <Link to="/cars" className="neo-btn bg-yellow-400 text-black px-8 py-4 text-base font-black uppercase tracking-wider inline-flex items-center gap-2 rounded-none">
+              <Link to="/cars" className="neo-btn bg-yellow-400 text-black px-8 py-4 text-base font-black uppercase tracking-wider inline-flex items-center gap-2 rounded-none border-2 border-black shadow-[4px_4px_0px_#DAD0C4]">
                 Browse Fleet <ArrowRight className="w-5 h-5" />
               </Link>
-              <Link to="/register" className="neo-btn bg-white text-black px-8 py-4 text-base font-black uppercase tracking-wider rounded-none">
-                Become a Member
-              </Link>
+
+              {!token ? (
+                // Skenario A: Jika BELUM LOGIN, tampilkan tombol pendaftaran biasa
+                <Link to="/register" className="neo-btn bg-white text-black px-8 py-4 text-base font-black uppercase tracking-wider rounded-none border-2 border-black shadow-[4px_4px_0px_#DAD0C4] hover:bg-gray-100">
+                  Become a Member
+                </Link>
+              ) : (
+                // Skenario B: Jika SUDAH LOGIN, hilangkan tombol login, munculkan Dashboard & Logout
+                <>
+                  <Link to="/borrower/dashboard" className="neo-btn bg-emerald-400 text-black px-6 py-4 text-base font-black uppercase tracking-wider rounded-none border-2 border-black shadow-[4px_4px_0px_#DAD0C4] hover:bg-emerald-300">
+                    Console: {user?.full_name?.split(' ')[0] || 'Active Driver'}
+                  </Link>
+
+                  <button 
+                    onClick={handleLogoutClick}
+                    className="neo-btn bg-rose-500 text-white px-6 py-4 text-base font-black uppercase tracking-wider rounded-none border-2 border-black shadow-[4px_4px_0px_#DAD0C4] hover:bg-rose-400 hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_#DAD0C4] transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <LogOut size={18} /> Logout
+                  </button>
+                </>
+              )}
             </div>
           </div>
           
@@ -319,10 +345,8 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* 3. CHAINZOKU STYLE FAQ SLIDER */}
       <section className="bg-[#1A4B3A] text-[#F0E9E0] py-32 border-b-8 border-[#DAD0C4] overflow-hidden">
         <div className="scroll-target opacity-0 -translate-x-full transition-all duration-1000 ease-out max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-center gap-16">
-          
           <div className="relative flex justify-center items-center w-full md:w-1/2 h-[550px]">
             <div className="absolute w-[320px] md:w-[380px] h-[500px] bg-white border-4 border-black transform -rotate-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)] opacity-40"></div>
             <div className="absolute w-[320px] md:w-[380px] h-[500px] bg-[#DAD0C4] border-4 border-black transform rotate-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.8)] opacity-80 z-0"></div>
@@ -395,7 +419,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 4. FOOTER */}
       <footer className="bg-[#0F1525] border-t-8 border-white py-16 px-6 relative">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]"></div>
         <div className="scroll-target opacity-0 translate-y-12 transition-all duration-700 ease-out max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 text-white relative z-10">
@@ -409,7 +432,6 @@ export default function Landing() {
             </p>
             
             <div className="flex gap-4 pt-4 items-center">
-              
               <div className="relative">
                 <button 
                   onClick={() => {
@@ -533,7 +555,6 @@ export default function Landing() {
                   </div>
                 )}
               </div>
-
             </div>
           </div>
 

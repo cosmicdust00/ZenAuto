@@ -4,6 +4,7 @@ import type { UserProfile } from '../types';
 interface AuthContextType {
   token: string | null;
   user: UserProfile | null;
+  loading: boolean;
   login: (token: string, user: UserProfile) => void;
   logout: () => void;
   updateProfileState: (updated: Partial<UserProfile>) => void;
@@ -26,6 +27,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     }
   });
+
+  const [loading] = useState<boolean>(false);
 
   const login = (newToken: string, userData: UserProfile) => {
     setToken(newToken);
@@ -50,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, updateProfileState, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ token, user, loading, login, logout, updateProfileState, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );
