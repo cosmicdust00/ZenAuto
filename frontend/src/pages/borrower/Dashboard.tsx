@@ -5,12 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Car, ClipboardList, Wallet, Radio } from 'lucide-react';
 
 export default function BorrowerDashboard() {
-    // const { user } = useAuth();
-
-    const user = {
-        user_id: "82e093e6-8204-444c-bcd9-b5fb28006fc1", // UUID milik Ciel dari Supabase
-        full_name: "Ciel"
-    };
+    const { user, token } = useAuth();
 
     // State untuk menyimpan metrik dinamis
     const [metrics, setMetrics] = useState({
@@ -24,46 +19,55 @@ export default function BorrowerDashboard() {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!user?.user_id) {
-        setIsLoading(false);
-        return; 
-      }
+        const fetchDashboardData = async () => {
+            // Cek apakah user dan token sudah siap di memory runtime
+            if (!user?.user_id || !token) {
+                setIsLoading(false);
+                return; 
+            }
 
-      try {
-        // Fetch Riwayat Transaksi
-        const resReservations = await axios.get(`http://localhost:5000/api/borrower/reservations?user_id=${user.user_id}`);
-        const reservations = resReservations.data.data;
+            try {
+                // Buat konfigurasi header standar untuk otorisasi JWT backend
+                const config = {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                };
 
-        // Fetch denda baru
-        const resPenalties = await axios.get(`http://localhost:5000/api/borrower/penalties?user_id=${user.user_id}`);
-        const totalPenalties = resPenalties.data.data.total_unpaid; // Ambil nilai kalkulasi backend
+                // Bersihkan alamat URL dari query string "?user_id=", kirim config sebagai parameter kedua
+                // Fetch Riwayat Transaksi milik borrower aktif
+                const resReservations = await axios.get(`http://localhost:5000/api/borrower/reservations`, config);
+                const reservations = resReservations.data.data;
 
-        const totalTrips = reservations.length;
-        const activeRentalsList = reservations.filter((res: any) => res.transaction_status === 'active');
+                // Fetch denda baru milik borrower aktif
+                const resPenalties = await axios.get(`http://localhost:5000/api/borrower/penalties`, config);
+                const totalPenalties = resPenalties.data.data.total_unpaid;
 
-        // Masukkan total denda ke state
-        setMetrics({
-          activeRentals: activeRentalsList.length,
-          historicalTrips: totalTrips,
-          accruedPenalties: totalPenalties
-        });
+                const totalTrips = reservations.length;
+                const activeRentalsList = reservations.filter((res: any) => res.transaction_status === 'active');
 
-        if (activeRentalsList.length > 0) {
-          setActiveCar(activeRentalsList[0]);
-        } else {
-          setActiveCar(null);
-        }
+                // Masukkan total denda ke state komponen
+                setMetrics({
+                    activeRentals: activeRentalsList.length,
+                    historicalTrips: totalTrips,
+                    accruedPenalties: totalPenalties
+                });
 
-      } catch (error) {
-        console.error("Error fetching borrower dashboard data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+                if (activeRentalsList.length > 0) {
+                    setActiveCar(activeRentalsList[0]);
+                } else {
+                    setActiveCar(null);
+                }
 
-    fetchDashboardData();
-  }, [user]);
+            } catch (error) {
+                console.error("Error fetching borrower dashboard data:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchDashboardData();
+    }, [user, token]);
 
     if (isLoading) {
         return <div className="p-8 text-center font-black uppercase tracking-widest text-xl">Loading Terminal Data...</div>;

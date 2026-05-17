@@ -41,8 +41,17 @@ exports.submitInquiry = async (req, res) => {
 };
 
 // PUT /api/faqs/publish/:id (admin membalas dan publish)
+// Hanya boleh dieksekusi oleh pengguna yang membawa Token JWT sah (Staff/Admin)
 exports.publishFaq = async (req, res) => {
     try {
+        const userId = req.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({ 
+                message: "Otentikasi gagal: Anda harus masuk sistem untuk dapat mengelola konten FAQ." 
+            });
+        }
+
         const { id } = req.params;
         const { answer } = req.body;
 

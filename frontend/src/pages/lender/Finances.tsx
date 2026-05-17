@@ -4,6 +4,7 @@ import { Plus, Loader2 } from 'lucide-react';
 import { PatchCard } from '../../components/ui/PatchCard.tsx';
 import { Badge } from '../../components/ui/Badge.tsx';
 import { ActionButton } from '../../components/ui/ActionButton.tsx';
+import { useAuth } from '../../context/AuthContext';
 
 interface LedgerItem {
   id: string;
@@ -16,6 +17,8 @@ interface LedgerItem {
 }
 
 export default function Finances() {
+  const { token, user } = useAuth();
+
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
   const [totalEarnings, setTotalEarnings] = useState(0);
   const [collectedPenalties, setCollectedPenalties] = useState(0);
@@ -24,14 +27,14 @@ export default function Finances() {
 
   useEffect(() => {
     const fetchFinances = async () => {
-      try {
-        const token = localStorage.getItem('token'); 
-        
-        // TEMPORARY BYPASS
-        const bypassUserId = '64ec5509-9b5f-4462-8018-044d92401799';
+      if (!token || !user) {
+        setIsLoading(false);
+        return;
+      }
 
+      setIsLoading(true);
+      try {
         const response = await axios.get('http://localhost:5000/api/lender/finances', {
-          params: { user_id: bypassUserId }, // Parameter bypass untuk backend
           headers: { Authorization: `Bearer ${token}` }
         });
 
@@ -96,8 +99,7 @@ export default function Finances() {
     };
 
     fetchFinances();
-  }, []);
-
+  }, [token, user]);
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-end border-b-4 border-[#1D2B45] pb-4">

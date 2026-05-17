@@ -6,12 +6,8 @@ import { Landmark, Wallet, CreditCard, ShieldCheck } from 'lucide-react';
 
 export default function Checkout() {
   const { transaction_id } = useParams();
-  // const { user } = useAuth();
-
-  const user = {
-      user_id: "82e093e6-8204-444c-bcd9-b5fb28006fc1", // UUID milik Ciel dari Supabase
-      full_name: "Ciel"
-  };
+  
+  const { user, token } = useAuth();
   const navigate = useNavigate();
 
   const [method, setMethod] = useState('Bank Clearing Transfer');
@@ -24,15 +20,19 @@ export default function Checkout() {
   // Fetch transaksi dari database
   useEffect(() => {
     const fetchTransactionDetail = async () => {
-      // Gunakan user statis bypass jika sedang testing (seperti di App.tsx)
-      if (!user?.user_id) {
+      if (!user?.user_id || !token) {
         setIsLoading(false);
         return;
       }
 
       try {
-        // Ambil seluruh riwayat transaksi milik user ini
-        const response = await axios.get(`http://localhost:5000/api/borrower/reservations?user_id=${user.user_id}`);
+        const config = {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        };
+
+        const response = await axios.get(`http://localhost:5000/api/borrower/reservations`, config);
         
         // Cari transaksi yang ID-nya cocok dengan URL saat ini
         const foundTx = response.data.data.find((tx: any) => tx.transaction_id === transaction_id);
@@ -51,19 +51,25 @@ export default function Checkout() {
     };
 
     if (transaction_id) fetchTransactionDetail();
-  }, [transaction_id, user, navigate]);
+  }, [transaction_id, user, token, navigate]);
 
   // Eksekusi backend2
   const executePaymentGatewayPipeline = async () => {
     setProcessing(true);
 
     try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+
       // Tembak API Payment yang sudah dibuat di borrower.controller.js
       await axios.post('http://localhost:5000/api/borrower/payments', {
         transaction_id: transaction_id,
         payment_method: method,
         amount: parseFloat(transaction.total_amount) // Kirim jumlah persis seperti di database
-      });
+      }, config);
 
       alert("Payment Successful! Vehicle is now actively rented.");
       navigate('/borrower/history');

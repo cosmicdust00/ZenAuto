@@ -4,6 +4,7 @@ import { Plus, Loader2, X, AlertTriangle, UploadCloud, Image as ImageIcon } from
 import { PatchCard } from '../../components/ui/PatchCard.tsx';
 import { Badge } from '../../components/ui/Badge.tsx';
 import { ActionButton } from '../../components/ui/ActionButton.tsx';
+import { useAuth } from '../../context/AuthContext';
 
 // Tipe data untuk daftar armada
 interface FleetCar {
@@ -22,6 +23,8 @@ interface CarModel {
 }
 
 export default function FleetManagement() {
+  const { token, user } = useAuth();
+
   const [fleets, setFleets] = useState<FleetCar[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,16 +42,16 @@ export default function FleetManagement() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  // TEMPORARY BYPASS
-  const bypassUserId = '64ec5509-9b5f-4462-8018-044d92401799';
-
   // List fleet
   const fetchFleets = async () => {
+    if (!token || !user) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token');
       const response = await axios.get('http://localhost:5000/api/lender/fleets', {
-        params: { user_id: bypassUserId },
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -80,13 +83,14 @@ export default function FleetManagement() {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-  }, [previewUrl]);
+  }, [previewUrl, token, user]);
 
   // Model Dropdown
   const handleOpenAddModal = async () => {
     setIsModalOpen(true);
+    if (!token) return;
+
     try {
-      const token = localStorage.getItem('token');
       const response = await axios.get('http://localhost:5000/api/lender/car-models', {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -117,15 +121,14 @@ export default function FleetManagement() {
   const handleSubmitNewVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.model_id || !formData.license_plate || !formData.color || !selectedFile) {
-      alert("Fill all data!");
+    if (!formData.model_id || !formData.license_plate || !formData.color || !selectedFile || !token) {
+      alert("Fill all data or ensure you are logged in!");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('token');
-      
+      // Upload Gambar
       const uploadData = new FormData();
       uploadData.append('image', selectedFile);
 
@@ -135,17 +138,17 @@ export default function FleetManagement() {
 
       const finalImageUrl = uploadResponse.data.imageUrl;
 
+      // Submit Data Mobil
       await axios.post('http://localhost:5000/api/lender/fleets', {
         model_id: formData.model_id,
         license_plate: formData.license_plate,
         color: formData.color,
         gps_device_id: formData.gps_device_id,
-        image_url: finalImageUrl, // Masukkan URL yang baru didapatkan
-        user_id: bypassUserId
+        image_url: finalImageUrl 
       }, {
         headers: { 
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json' // Tegaskan kembali bahwa ini JSON
+          'Content-Type': 'application/json' 
         }
       });
 
@@ -170,11 +173,11 @@ export default function FleetManagement() {
 
   // Tarik kendaraan
   const handleWithdraw = async (carId: string) => {
+    if (!token) return;
     const isConfirm = window.confirm("Do you want to withdraw this vehicle?");
     if (!isConfirm) return;
 
     try {
-      const token = localStorage.getItem('token');
       await axios.put(`http://localhost:5000/api/lender/fleets/${carId}/withdraw`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });

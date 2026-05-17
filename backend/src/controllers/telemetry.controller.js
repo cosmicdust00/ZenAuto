@@ -1,6 +1,7 @@
 const VehicleTelemetry = require('../models/telemetry.model');
 const { pool } = require('../config/supabase'); 
 
+// PUBLIC ENDPOINT
 // Menyimpan koordinat GPS ke MongoDB
 exports.saveLocation = async (req, res) => {
     try {
@@ -64,13 +65,32 @@ exports.saveLocation = async (req, res) => {
     }
 };
 
+// PROTECTED ENDPOINT
 // Mengambil lokasi terbaru untuk ditampilkan di peta leaflet
 exports.getLatestLocation = async (req, res) => {
     try {
-        
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
 
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         const { car_id } = req.params;
+
+        const accessCheckQuery = `
+            SELECT EXISTS (
+                SELECT 1 FROM fleet_cars WHERE car_id = $1 AND user_id = $2
+                UNION
+                SELECT 1 FROM rental_transactions rt
+                JOIN rental_details rd ON rt.transaction_id = rd.transaction_id
+                WHERE rd.car_id = $1 AND rt.user_id = $2 AND rt.transaction_status = 'active'
+            ) as "hasAccess";
+        `;
+        const accessResult = await pool.query(accessCheckQuery, [car_id, userId]);
+
+        if (!accessResult.rows[0].hasAccess) {
+            return res.status(403).json({ message: "Akses ditolak: Anda tidak memiliki wewenang untuk melacak kendaraan ini!" });
+        }
 
         const latestBucket = await VehicleTelemetry.findOne({ car_id: car_id })
             .sort({ bucket_start: -1, _id: -1 }); 
@@ -98,9 +118,15 @@ exports.getLatestLocation = async (req, res) => {
     }
 };
 
+// PROTECTED ENDPOINT
 // GET /api/telemetry/history/:car_id
 exports.getTrajectoryHistory = async (req, res) => {
     try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
+
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         
         const { car_id } = req.params;
@@ -110,10 +136,24 @@ exports.getTrajectoryHistory = async (req, res) => {
             return res.status(400).json({ message: "Start and End parameters are required." });
         }
 
+        const accessCheckQuery = `
+            SELECT EXISTS (
+                SELECT 1 FROM fleet_cars WHERE car_id = $1 AND user_id = $2
+                UNION
+                SELECT 1 FROM rental_transactions rt
+                JOIN rental_details rd ON rt.transaction_id = rd.transaction_id
+                WHERE rd.car_id = $1 AND rt.user_id = $2 AND rt.transaction_status = 'active'
+            ) as "hasAccess";
+        `;
+        const accessResult = await pool.query(accessCheckQuery, [car_id, userId]);
+
+        if (!accessResult.rows[0].hasAccess) {
+            return res.status(403).json({ message: "Akses ditolak: Anda tidak memiliki wewenang untuk melihat riwayat perjalanan kendaraan ini!" });
+        }
+
         const startDate = new Date(start);
         const endDate = new Date(end);
 
-        // Serahkan penyaringan waktu sepenuhnya pada query MongoDB
         const buckets = await VehicleTelemetry.find({
             car_id: car_id,
             bucket_start: { $lte: endDate },
@@ -122,7 +162,6 @@ exports.getTrajectoryHistory = async (req, res) => {
 
         let trajectoryPath = [];
         
-        // Rakit koordinat tanpa intervensi filter 'if' JavaScript
         buckets.forEach(bucket => {
             bucket.measurements.forEach(m => {
                 trajectoryPath.push([m.latitude, m.longitude]);

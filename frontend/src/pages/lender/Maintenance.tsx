@@ -4,6 +4,7 @@ import { Wrench, CheckCircle2, Loader2, X } from 'lucide-react';
 import { PatchCard } from '../../components/ui/PatchCard.tsx';
 import { Badge } from '../../components/ui/Badge.tsx';
 import { ActionButton } from '../../components/ui/ActionButton.tsx';
+import { useAuth } from '../../context/AuthContext';
 
 // Tipe data tabel Maintenance
 interface MaintenanceLog {
@@ -26,6 +27,8 @@ interface FleetCar {
 }
 
 export default function Maintenance() {
+  const { token, user } = useAuth();
+
   const [logs, setLogs] = useState<MaintenanceLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -36,16 +39,16 @@ export default function Maintenance() {
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // TEMPORARY BYPASS
-  const bypassUserId = '64ec5509-9b5f-4462-8018-044d92401799';
-
   // Maintenance data
   const fetchMaintenanceLogs = async () => {
+    if (!token || !user) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token');
       const response = await axios.get('http://localhost:5000/api/lender/maintenance', {
-        params: { user_id: bypassUserId },
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -74,10 +77,12 @@ export default function Maintenance() {
 
   useEffect(() => {
     fetchMaintenanceLogs();
-  }, []);
+  }, [token, user]);
 
   // End service
   const handleCompleteService = async (maintenanceId: string) => {
+    if (!token) return;
+
     const finalCostStr = window.prompt("How much is the cost?(ex: 450000)");
     if (finalCostStr === null) return; 
     
@@ -88,7 +93,6 @@ export default function Maintenance() {
     }
 
     try {
-      const token = localStorage.getItem('token');
       await axios.put(`http://localhost:5000/api/lender/maintenances/${maintenanceId}/complete`, { cost: finalCost }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -102,12 +106,15 @@ export default function Maintenance() {
 
   // Modal
   const handleOpenModal = async () => {
+    if (!token) {
+      alert("Login first to do this step.");
+      return;
+    }
+    
     setIsModalOpen(true);
     try {
-      const token = localStorage.getItem('token');
-      // Tarik daftar armada milik lender ini
+      // Tarik daftar armada milik lender ini (Backend sudah tahu siapa lendernya dari token)
       const response = await axios.get('http://localhost:5000/api/lender/fleets', {
-        params: { user_id: bypassUserId },
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -123,14 +130,13 @@ export default function Maintenance() {
   // Submit form
   const handleSubmitService = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCarId || !description.trim()) {
+    if (!selectedCarId || !description.trim() || !token) {
       alert("Choose a car or fill the description!");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('token');
       await axios.post('http://localhost:5000/api/lender/maintenances', {
         car_id: selectedCarId,
         description: description

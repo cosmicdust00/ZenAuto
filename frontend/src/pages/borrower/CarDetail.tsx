@@ -8,14 +8,10 @@ import {
 } from 'lucide-react';
 
 export default function CarDetail() {
-  const { car_id } = useParams(); // Sesuaikan dengan path di App.tsx (:car_id)
+  const { car_id } = useParams();
   const navigate = useNavigate();
-  // const { user } = useAuth();
-
-  const user = {
-      user_id: "82e093e6-8204-444c-bcd9-b5fb28006fc1", // UUID milik Ciel dari Supabase
-      full_name: "Ciel"
-  };
+  
+  const { user, token } = useAuth();
   
   // State untuk data
   const [car, setCar] = useState<any>(null);
@@ -46,7 +42,7 @@ export default function CarDetail() {
   useEffect(() => {
     const fetchCarDetail = async () => {
       try {
-        // Mengambil semua mobil available, lalu mencari yang ID-nya cocok
+        // Mengambil semua mobil available (Rute ini publik, tidak perlu token)
         const response = await axios.get('http://localhost:5000/api/borrower/cars/available');
         const foundCar = response.data.data.find((c: any) => c.id === car_id);
         
@@ -106,11 +102,15 @@ export default function CarDetail() {
   const grandTotal = baseTotal + addonsTotal;
 
   // BYPASS SEMENTARA UNTUK TESTING (Anggap selalu true agar bisa checkout)
-  // Saat integrasi penuh, ganti menjadi: Boolean(user?.license_card_number)
   const hasDriverLicense = true; 
 
   // Fungsi checkout (Menembak API POST Reservasi)
   const handleCheckout = async () => {
+    if (!token || !user) {
+      alert("Authentication is required. Login first.");
+      return;
+    }
+
     if (!hasDriverLicense) {
       alert("Please complete your Driver's License in your profile first.");
       return;
@@ -123,9 +123,7 @@ export default function CarDetail() {
     try {
       setIsSubmitting(true);
       
-      // Payload sesuai dengan req.body di createReservation (backend)
       const payload = {
-        user_id: user?.user_id,
         car_id: car.id,
         start_date: startDate,
         end_date: endDate,
@@ -139,7 +137,14 @@ export default function CarDetail() {
         grand_total_payment: grandTotal
       };
 
-      const response = await axios.post('http://localhost:5000/api/borrower/reservations', payload);
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+
+      // Tembak POST API menggunakan kombinasi payload dan config
+      const response = await axios.post('http://localhost:5000/api/borrower/reservations', payload, config);
       
       // Ambil transaction_id hasil dari INSERT database
       const transactionId = response.data.data.transaction_id;

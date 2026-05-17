@@ -6,6 +6,7 @@ import { Radio, AlertOctagon, Search, Calendar, Eye, Activity, History } from 'l
 import { PatchCard } from '../../components/ui/PatchCard.tsx';
 import { Badge } from '../../components/ui/Badge.tsx';
 import { ActionButton } from '../../components/ui/ActionButton.tsx';
+import { useAuth } from '../../context/AuthContext';
 
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -29,6 +30,8 @@ function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
 }
 
 export default function LiveTracking() {
+  const { token } = useAuth();
+
   const [inputCarId, setInputCarId] = useState('');
   const [targetCarId, setTargetCarId] = useState(''); 
 
@@ -49,11 +52,12 @@ export default function LiveTracking() {
     let interval: ReturnType<typeof setInterval>;
 
     const fetchLatestLocation = async () => {
-      if (!targetCarId || isHistoryMode) return;
+      if (!targetCarId || isHistoryMode || !token) return;
 
       try {
         const response = await axios.get(`http://localhost:5000/api/telemetry/locations/${targetCarId}`, {
-          params: { _t: Date.now() } 
+          params: { _t: Date.now() },
+          headers: { Authorization: `Bearer ${token}` }
         });
         
         const { latitude, longitude, timestamp } = response.data.data;
@@ -74,13 +78,13 @@ export default function LiveTracking() {
       }
     };
 
-    if (targetCarId && !isHistoryMode) {
+    if (targetCarId && !isHistoryMode && token) {
       fetchLatestLocation();
       interval = setInterval(fetchLatestLocation, 3000);
     }
 
     return () => clearInterval(interval);
-  }, [targetCarId, isHistoryMode]);
+  }, [targetCarId, isHistoryMode, token]);
 
   // Reset semua state jika target mobil diganti
   useEffect(() => {
@@ -92,6 +96,10 @@ export default function LiveTracking() {
   }, [targetCarId]);
 
   const handleStartTracking = () => {
+    if (!token) {
+      alert("Authentication is required. Login first.");
+      return;
+    }
     if (!inputCarId.trim()) {
       alert("Please enter a valid Car UUID to track.");
       return;
@@ -101,6 +109,10 @@ export default function LiveTracking() {
 
   // Menarik log history
   const handleFetchTrajectoryLog = async () => {
+    if (!token) {
+      alert("Authentication is required. Login first.");
+      return;
+    }
     if (!startTime || !endTime) {
       alert("PLEASE ALLOCATE BOTH START AND END TIMESTAMPS.");
       return;
@@ -112,11 +124,14 @@ export default function LiveTracking() {
 
     try {
       setIsFetchingHistory(true);
+      
       const response = await axios.get(`http://localhost:5000/api/telemetry/history/${targetCarId}`, {
         params: { 
-        start: startTime,
-        end: endTime,
-        _t: Date.now() }
+          start: startTime,
+          end: endTime,
+          _t: Date.now() 
+        },
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       const pathPoints = response.data.data;

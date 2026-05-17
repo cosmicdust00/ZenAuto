@@ -4,21 +4,26 @@ import { useAuth } from '../../context/AuthContext';
 import { RefreshCw, AlertTriangle, CheckSquare } from 'lucide-react';
 
 export default function RentalHistory() {
-  const { token } = useAuth(); 
+  const { user, token } = useAuth(); 
   const [history, setHistory] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Membuat objek user bypass di bagian atas komponen
-  const user = {
-    user_id: "82e093e6-8204-444c-bcd9-b5fb28006fc1", // UUID milik Ciel
-    full_name: "Ciel"
-  };
-
   const fetchLeaseLedgerContext = async () => {
+    if (!user?.user_id || !token) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
-      // Menggunakan objek user.user_id secara konsisten seperti di dashboard
-      const response = await axios.get(`http://localhost:5000/api/borrower/reservations?user_id=${user.user_id}`);
+      
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+
+      const response = await axios.get(`http://localhost:5000/api/borrower/reservations`, config);
       
       if (Array.isArray(response.data.data)) {
         setHistory(response.data.data);
@@ -32,16 +37,15 @@ export default function RentalHistory() {
 
   useEffect(() => { 
     fetchLeaseLedgerContext(); 
-  }, []);
+  }, [user, token]);
 
   // Fungsi return mobil (mengaktifkan mekanisme penalty)
   const dispatchReturnEngineTrigger = async (detailId: string) => {
     if (!window.confirm("Confirm Action: Discharging vehicle unit allocation. Proceed to hit server automated penalty checker?")) return;
 
     try {
-      // Menembak rute returnCar yang dibuat
       const response = await axios.post(`http://localhost:5000/api/borrower/returns/${detailId}`, {}, {
-        headers: { 'Authorization': `Bearer ${token}` } // Untuk persiapan JWT
+        headers: { Authorization: `Bearer ${token}` } 
       });
       
       const data = response.data.data;

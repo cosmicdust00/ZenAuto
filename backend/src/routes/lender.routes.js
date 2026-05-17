@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const lenderController = require('../controllers/lender.controller');
+const { authorizeToken } = require('../middlewares/auth');
+
+router.use(authorizeToken);
 
 router.get('/car-models', lenderController.getCarModels);
 router.post('/fleets', lenderController.addFleetCar);

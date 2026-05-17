@@ -1,45 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import axios from 'axios';
+import { useAuth } from '../../context/AuthContext'; 
 import { 
   CarFront, ArrowRight, Globe, Camera, MessageCircle, 
   ChevronLeft, ChevronRight, Zap, Target, Siren, Timer, ShieldCheck, Cog, Key, RefreshCcw,
-  Send, BellRing, ShieldAlert, CheckCircle2, X, MapPin, Aperture,
+  Send, BellRing, CheckCircle2, X, MapPin, Aperture,
   Video, Share2, Music
 } from 'lucide-react';
 
-// --- DATA INITIAL FAQ CARDS ---
+// Daftar Ikon untuk dirotasi pada data yang ditarik dari database
+const ICON_POOL = [CarFront, Zap, Key, Target, ShieldCheck, Timer, Cog, Globe, RefreshCcw, Siren];
+
+// Fallback data jika backend mati
 const INITIAL_FAQ_CARDS = [
   { q: "ID CARD?", a: "You must provide a valid National ID Card (KTP) and an active Driver's License (SIM A).", icon: CarFront },
   { q: "AGE LIMIT?", a: "The minimum age to rent a standard vehicle is 21 years old.", icon: Zap },
   { q: "DEPOSIT?", a: "Yes, a security deposit is held on your credit card and released upon safe return.", icon: Key },
-  { q: "PAYMENT?", a: "Credit cards are preferred. Debit cards accepted subject to background checks.", icon: Target },
-  { q: "INSURANCE?", a: "Comprehensive insurance is fully included in the base daily rate.", icon: ShieldCheck },
-  { q: "LATE FEE?", a: "Telemetry system generates a late fee of IDR 50,000/hour automatically.", icon: Timer },
-  { q: "FUEL RULE?", a: "We operate on a strict full-to-full fuel policy. Return it as you got it.", icon: Cog },
-  { q: "MILEAGE?", a: "Standard rentals come with unlimited mileage. Drive freely.", icon: CarFront },
-  { q: "ACCIDENT?", a: "Immediately contact our 24/7 support line and the local authorities.", icon: Siren },
-  { q: "CO-DRIVER?", a: "An additional driver can be registered during the checkout process.", icon: CarFront },
-  { q: "PETS?", a: "Pets allowed, but heavy cleaning fees apply if the interior is ruined.", icon: CarFront },
-  { q: "RENT EV?", a: "Absolutely. We offer a premium range of EVs including Tesla and BYD.", icon: Zap },
-  { q: "CHARGING?", a: "Cables are provided, access our partner charging network anywhere.", icon: Zap },
-  { q: "BORDERS?", a: "Cross-border travel requires prior approval and extended coverage.", icon: Globe },
-  { q: "BABY SEAT?", a: "ISOFIX child seats are available as an add-on during checkout.", icon: CarFront },
-  { q: "CANCEL?", a: "Free cancellation up to 48 hours before the scheduled pickup time.", icon: RefreshCcw },
-  { q: "BREAKDOWN?", a: "Free 24/7 roadside assistance and towing are included.", icon: Siren },
-  { q: "UNLOCK?", a: "Use the physical smart key or digital unlocking via our web terminal.", icon: Key },
-  { q: "HIDDEN FEE?", a: "Zero. Our pricing matrix is 100% transparent. No surprises.", icon: Target },
-  { q: "EXTEND?", a: "Extend your lease via the Borrower Dashboard, subject to availability.", icon: RefreshCcw }
 ].map((item, index) => ({
   id: String(index + 1).padStart(2, '0'),
   numberId: index + 1,
   title: item.q,
   desc: item.a,
   CardIcon: item.icon,
+  rawId: 'fallback',
   color: ['bg-rose-500', 'bg-emerald-400', 'bg-sky-400', 'bg-yellow-400', 'bg-[#DAD0C4]'][index % 5]
 }));
 
 export default function Landing() {
-  // --- STATE & LOGIKA INTERAKTIF KASET PUTAR (SPINNING VINYL) ---
+  const { token } = useAuth();
+
   const [rotation, setRotation] = useState(0); 
   const [isInteracting, setIsInteracting] = useState(false); 
   const [lastX, setLastX] = useState(0); 
@@ -53,8 +43,6 @@ export default function Landing() {
     if (!isInteracting) return;
     const currentX = e.clientX || (e.touches && e.touches[0].clientX);
     const deltaX = currentX - lastX;
-
-    // Nilai dikali 0.6 agar sensitivitas putaran pas dan terasa halus
     setRotation((prev) => prev + deltaX * 0.6); 
     setLastX(currentX);
   };
@@ -62,29 +50,71 @@ export default function Landing() {
   const handleInteractionEnd = () => {
     setIsInteracting(false);
   };
-  const [faqCards, setFaqCards] = useState(INITIAL_FAQ_CARDS);
+
+  const [faqCards, setFaqCards] = useState<any[]>(INITIAL_FAQ_CARDS);
   const [activeIndex, setActiveIndex] = useState(0);
   const [animating, setAnimating] = useState<'next' | 'prev' | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // STATE WORKFLOW INTERAKSI CHAT & ADMIN
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatStep, setChatStep] = useState<'customer_input' | 'admin_reply'>('customer_input');
   const [savedQuestion, setSavedQuestion] = useState('');
   const [adminAnswer, setAdminAnswer] = useState('');
 
-  // STATE UNTUK MODAL IKON BARU (CAMERA & GLOBE)
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isGlobeOpen, setIsGlobeOpen] = useState(false);
 
   const faqListRef = useRef<HTMLDivElement>(null);
   const faqItemRefs = useRef<Array<HTMLDivElement | null>>([]);
 
+  // Fetch data FAQ dari backend saat komponen dimuat
   useEffect(() => {
-    setIsLoaded(true);
+    const fetchFaqs = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/faqs');
+        const dbFaqs = response.data.map((faq: any, index: number) => ({
+          id: String(faq.number_id || index + 1).padStart(2, '0'),
+          numberId: faq.number_id || index + 1,
+          title: faq.title,
+          desc: faq.desc,
+          CardIcon: ICON_POOL[index % ICON_POOL.length],
+          rawId: faq.id, 
+          color: ['bg-rose-500', 'bg-emerald-400', 'bg-sky-400', 'bg-yellow-400', 'bg-[#DAD0C4]'][index % 5]
+        }));
+        
+        if (dbFaqs.length > 0) {
+          setFaqCards(dbFaqs);
+        }
+      } catch (error) {
+        console.error("Gagal memuat FAQ dari database, menggunakan data fallback.", error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+
+    fetchFaqs();
   }, []);
 
-  // Auto Scroll Sinkronisasi Samping Kiri & Kanan
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.remove('opacity-0', 'translate-y-12', '-translate-x-full');
+          entry.target.classList.add('opacity-100', 'translate-y-0', 'translate-x-0');
+        }
+      });
+    }, { threshold: 0.05, rootMargin: '50px' });
+
+    // Temukan semua kelas 'scroll-target' di dalam DOM dan berikan observer
+    document.querySelectorAll('.scroll-target').forEach((el) => {
+      observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [isLoaded, faqCards]); // Efek dipicu ulang saat data selesai di-load
+
   useEffect(() => {
     const activeFaqItem = faqItemRefs.current[activeIndex];
     const faqList = faqListRef.current;
@@ -118,62 +148,74 @@ export default function Landing() {
     }, 400);
   };
 
-  // 1. Customer Submit Pertanyaan
-  const handleCustomerSubmit = (e: React.FormEvent) => {
+  const handleCustomerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!savedQuestion.trim()) return;
     
-    // Alihkan langkah ke halaman kelola admin
-    setChatStep('admin_reply');
+    try {
+      await axios.post('http://localhost:5000/api/faqs/inquiry', { 
+        question: savedQuestion 
+      });
+      alert("Pertanyaan berhasil dikirim ke antrean admin!");
+      setChatStep('admin_reply');
+    } catch (error) {
+      console.error("Gagal mengirim pertanyaan:", error);
+      alert("Terjadi kesalahan saat mengirim pertanyaan.");
+    }
   };
 
-  // 2. Admin Balas & Publish Otomatis ke Kiri-Kanan
-  const handleAdminPublish = (e: React.FormEvent) => {
+  const handleAdminPublish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminAnswer.trim()) return;
 
-    const nextId = faqCards.length + 1;
-    const newFaqItem = {
-      id: String(nextId).padStart(2, '0'),
-      numberId: nextId,
-      title: savedQuestion.toUpperCase().endsWith('?') ? savedQuestion.toUpperCase() : `${savedQuestion.toUpperCase()}?`,
-      desc: adminAnswer,
-      CardIcon: MessageCircle,
-      color: ['bg-rose-500', 'bg-emerald-400', 'bg-sky-400', 'bg-yellow-400', 'bg-[#DAD0C4]'][faqCards.length % 5]
-    };
+    if (!token) {
+      alert("Akses Ditolak: Anda harus login sebagai Admin/Staff untuk mempublikasikan FAQ.");
+      return;
+    }
 
-    // Tambahkan serentak ke katalog kartu kiri dan list kanan
-    setFaqCards(prev => [...prev, newFaqItem]);
-    
-    // Reset form state
-    setSavedQuestion('');
-    setAdminAnswer('');
-    setChatStep('customer_input');
-    setIsChatOpen(false);
+    try {
+      const simulationId = "dummy-uuid-atau-id-asli-dari-tabel-faq"; 
 
-    // Langsung arahkan index slide aktif ke kartu baru kita
-    setAnimating('next');
-    setTimeout(() => {
-      setActiveIndex(faqCards.length);
-      setAnimating(null);
-    }, 400);
+      await axios.put(`http://localhost:5000/api/faqs/publish/${simulationId}`, {
+        answer: adminAnswer
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const nextId = faqCards.length + 1;
+      const newFaqItem = {
+        id: String(nextId).padStart(2, '0'),
+        numberId: nextId,
+        title: savedQuestion.toUpperCase().endsWith('?') ? savedQuestion.toUpperCase() : `${savedQuestion.toUpperCase()}?`,
+        desc: adminAnswer,
+        CardIcon: MessageCircle,
+        rawId: simulationId,
+        color: ['bg-rose-500', 'bg-emerald-400', 'bg-sky-400', 'bg-yellow-400', 'bg-[#DAD0C4]'][faqCards.length % 5]
+      };
+
+      setFaqCards(prev => [...prev, newFaqItem]);
+      setSavedQuestion('');
+      setAdminAnswer('');
+      setChatStep('customer_input');
+      setIsChatOpen(false);
+
+      setAnimating('next');
+      setTimeout(() => {
+        setActiveIndex(faqCards.length);
+        setAnimating(null);
+      }, 400);
+
+      alert("FAQ Berhasil Dipublikasikan!");
+
+    } catch (error: any) {
+      console.error("Gagal mempublikasikan FAQ:", error);
+      alert(error.response?.data?.message || "Gagal mempublikasikan. Pastikan ID valid dan token aktif.");
+    }
   };
 
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.remove('opacity-0', 'translate-y-12', '-translate-x-full');
-          entry.target.classList.add('opacity-100', 'translate-y-0', 'translate-x-0');
-        }
-      });
-    }, { threshold: 0.05, rootMargin: '50px' });
+  const currentCard = faqCards[activeIndex] || faqCards[0];
 
-    document.querySelectorAll('.scroll-target').forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-
-  const currentCard = faqCards[activeIndex];
+  if (!isLoaded) return null;
 
   return (
     <div className="min-h-screen bg-[#F0E9E0] overflow-hidden relative">
@@ -193,7 +235,6 @@ export default function Landing() {
           .scroll-bar-brutalism::-webkit-scrollbar-track { background: #0F1525; border-left: 4px solid #F0E9E0; }
           .scroll-bar-brutalism::-webkit-scrollbar-thumb { background: #a3e635; border: 4px solid #0F1525; }
 
-          /* MODAL SPEECH BUBBLE TRANSTITION POP EFFECT */
           @keyframes bubblePop {
             0% { transform: scale(0.6) translateY(30px); opacity: 0; }
             100% { transform: scale(1) translateY(0); opacity: 1; }
@@ -240,7 +281,7 @@ export default function Landing() {
               Experience the ultimate freedom on the road. We provide a seamless, premium car rental experience with a diverse fleet of standard and electric vehicles tailored for your journey.
             </p>
             <div className="flex flex-wrap gap-4 pt-2">
-              <Link to="/borrower/cars" className="neo-btn bg-yellow-400 text-black px-8 py-4 text-base font-black uppercase tracking-wider inline-flex items-center gap-2 rounded-none">
+              <Link to="/cars" className="neo-btn bg-yellow-400 text-black px-8 py-4 text-base font-black uppercase tracking-wider inline-flex items-center gap-2 rounded-none">
                 Browse Fleet <ArrowRight className="w-5 h-5" />
               </Link>
               <Link to="/register" className="neo-btn bg-white text-black px-8 py-4 text-base font-black uppercase tracking-wider rounded-none">
@@ -249,15 +290,9 @@ export default function Landing() {
             </div>
           </div>
           
-          {/* SISI KANAN: REVISI KASET VINYL INTERAKTIF BISA DIPUTAR */}
           <div className={`flex justify-center transition-all duration-1000 delay-300 ease-out ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}>
             <div className="relative group">
-              
-
-              {/* Player Base (Kotak Dudukan Kaset) */}
               <div className="bg-[#DAD0C4] border-4 border-[#0F1525] p-5 shadow-[12px_12px_0px_0px_#062954] transform rotate-2 rounded-2xl">
-                
-                {/* Piringan Bulat Interaktif */}
                 <div 
                   className="w-[290px] h-[290px] sm:w-[350px] sm:h-[350px] relative rounded-full border-4 border-black overflow-hidden bg-black cursor-grab active:cursor-grabbing shadow-2xl transition-transform duration-150 ease-out select-none"
                   style={{ transform: `rotate(${rotation}deg)` }}
@@ -269,19 +304,15 @@ export default function Landing() {
                   onTouchMove={handleInteractionMove}
                   onTouchEnd={handleInteractionEnd}
                 >
-                  {/* Gambar Utama Kaset Pinterest */}
                   <img 
                     src="https://i.pinimg.com/736x/85/93/fc/8593fc2db336172660f4dbea1783b758.jpg" 
                     alt="ZenAuto Interactive Album" 
                     className="w-full h-full object-cover pointer-events-none select-none"
                   />
-
-                  {/* Efek Lubang Tengah Kaset Biar Realistis */}
                   <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-[#DAD0C4] rounded-full border-4 border-black shadow-inner flex items-center justify-center">
                     <div className="w-2.5 h-2.5 bg-[#0F1525] rounded-full"></div>
                   </div>
                 </div>
-
               </div>
             </div>
           </div>
@@ -292,38 +323,36 @@ export default function Landing() {
       <section className="bg-[#1A4B3A] text-[#F0E9E0] py-32 border-b-8 border-[#DAD0C4] overflow-hidden">
         <div className="scroll-target opacity-0 -translate-x-full transition-all duration-1000 ease-out max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-center gap-16">
           
-          {/* Tumpukan Kartu (KIRI) - KEMBALI ASLI 100% CLEAN TANPA KOTAK PERTANYAAN */}
           <div className="relative flex justify-center items-center w-full md:w-1/2 h-[550px]">
             <div className="absolute w-[320px] md:w-[380px] h-[500px] bg-white border-4 border-black transform -rotate-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)] opacity-40"></div>
             <div className="absolute w-[320px] md:w-[380px] h-[500px] bg-[#DAD0C4] border-4 border-black transform rotate-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.8)] opacity-80 z-0"></div>
             
-            <div 
-              className={`absolute w-[320px] md:w-[380px] h-[500px] border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-center items-center p-6 z-10 transition-all duration-400 ease-in-out ${currentCard.color}
-                ${animating === 'next' ? 'translate-y-[150%] rotate-[25deg] opacity-0 scale-90' : ''}
-                ${animating === 'prev' ? 'translate-y-[150%] -rotate-[25deg] opacity-0 scale-90' : ''}
-                ${!animating ? 'translate-y-0 rotate-0 opacity-100 scale-100' : ''}
-              `}
-            >
-              {/* Header Kartu */}
-              <div className="absolute top-6 left-6 right-6 flex justify-between items-start z-20">
-                <span className="font-black text-black tracking-widest uppercase bg-white px-2 border-2 border-black text-xs shadow-[2px_2px_0px_#000]">ZenAuto Inc.</span>
-                <div className="w-10 h-10 bg-white rounded-full border-4 border-black flex items-center justify-center text-black font-black text-sm shadow-[2px_2px_0px_#000]">
-                  #{currentCard.id}
+            {currentCard && (
+              <div 
+                className={`absolute w-[320px] md:w-[380px] h-[500px] border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-center items-center p-6 z-10 transition-all duration-400 ease-in-out ${currentCard.color}
+                  ${animating === 'next' ? 'translate-y-[150%] rotate-[25deg] opacity-0 scale-90' : ''}
+                  ${animating === 'prev' ? 'translate-y-[150%] -rotate-[25deg] opacity-0 scale-90' : ''}
+                  ${!animating ? 'translate-y-0 rotate-0 opacity-100 scale-100' : ''}
+                `}
+              >
+                <div className="absolute top-6 left-6 right-6 flex justify-between items-start z-20">
+                  <span className="font-black text-black tracking-widest uppercase bg-white px-2 border-2 border-black text-xs shadow-[2px_2px_0px_#000]">ZenAuto Inc.</span>
+                  <div className="w-10 h-10 bg-white rounded-full border-4 border-black flex items-center justify-center text-black font-black text-sm shadow-[2px_2px_0px_#000]">
+                    #{currentCard.id}
+                  </div>
+                </div>
+                
+                <div className="text-center relative flex flex-col items-center justify-center">
+                  <h2 className="text-[200px] md:text-[250px] leading-none font-black text-white drop-shadow-[8px_8px_0px_rgba(0,0,0,1)] tracking-tighter z-0">
+                    {currentCard.numberId}
+                  </h2>
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white opacity-40 z-10">
+                    <currentCard.CardIcon size={120} strokeWidth={4} />
+                  </div>
                 </div>
               </div>
-              
-              {/* Giant Number & Car Icon (Clean Version!) */}
-              <div className="text-center relative flex flex-col items-center justify-center">
-                <h2 className="text-[200px] md:text-[250px] leading-none font-black text-white drop-shadow-[8px_8px_0px_rgba(0,0,0,1)] tracking-tighter z-0">
-                  {currentCard.numberId}
-                </h2>
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white opacity-40 z-10">
-                  <currentCard.CardIcon size={120} strokeWidth={4} />
-                </div>
-              </div>
-            </div>
+            )}
 
-            {/* Navigasi Slide Bouncy */}
             <button onClick={handlePrev} disabled={animating !== null} className="absolute top-1/2 left-0 md:-left-12 transform -translate-y-1/2 bg-lime-300 w-16 h-16 rounded-full border-4 border-black flex items-center justify-center shadow-[4px_4px_0px_#000] hover:bg-white active:translate-y-1 active:shadow-none transition-all cursor-pointer z-20">
               <ChevronLeft className="w-10 h-10 text-black" />
             </button>
@@ -332,7 +361,6 @@ export default function Landing() {
             </button>
           </div>
 
-          {/* Panel FAQ KNOWLEDGE DATABASE (KANAN) */}
           <div className="w-full md:w-1/2 space-y-8 text-left h-[550px] flex flex-col justify-between">
             <h2 className="text-5xl font-black text-lime-300 uppercase tracking-tighter leading-none border-b-4 border-lime-300 pb-4">
               KNOWLEDGE <br/> DATABASE
@@ -364,11 +392,10 @@ export default function Landing() {
               Total {faqCards.length} entries registered in database. Continuous integration enabled.
             </p>
           </div>
-
         </div>
       </section>
 
-      {/* 4. FOOTER WITH THREE INTERACTIVE MODAL BUTTONS (CLEAN & BALANCED) */}
+      {/* 4. FOOTER */}
       <footer className="bg-[#0F1525] border-t-8 border-white py-16 px-6 relative">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]"></div>
         <div className="scroll-target opacity-0 translate-y-12 transition-all duration-700 ease-out max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 text-white relative z-10">
@@ -381,10 +408,8 @@ export default function Landing() {
               The world's first premium car rental service tailored with robust telemetry. Built for legends, by legends.
             </p>
             
-            {/* GRUP IKON MEDIA SOSIAL INTERAKTIF */}
             <div className="flex gap-4 pt-4 items-center">
               
-              {/* IKON 1: SPEECH BUBBLE FAQ SYSTEM */}
               <div className="relative">
                 <button 
                   onClick={() => {
@@ -424,7 +449,6 @@ export default function Landing() {
                 )}
               </div>
 
-              {/* IKON 2: CAMERA POPUP (OFFICIAL SOCIAL MATRIX) */}
               <div className="relative">
                 <button 
                   onClick={() => {
@@ -480,7 +504,6 @@ export default function Landing() {
                 )}
               </div>
 
-              {/* IKON 3: GLOBE POPUP (GLOBAL SECTOR MAP NODE) */}
               <div className="relative">
                 <button 
                   onClick={() => {

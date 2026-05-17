@@ -1,8 +1,14 @@
 const { pool } = require('../config/supabase');
 
-// Mengambil model mobil
+// Butuh token rute, tapi tidak butuh otorisasi kepemilikan khusus
+// Mengambil model mobil untuk dropdown pendaftaran
 exports.getCarModels = async (req, res) => {
     try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
+
         const result = await pool.query('SELECT * FROM car_models ORDER BY brand ASC, model_name ASC');
         res.status(200).json({
             message: "Successfully retrieved car models.",
@@ -17,10 +23,15 @@ exports.getCarModels = async (req, res) => {
 // Menambahkan mobil yang dapat disewa
 exports.addFleetCar = async (req, res) => {
     try {
-        const { model_id, user_id, license_plate, color, image_url, gps_device_id } = req.body;
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
 
-        if (!model_id || !user_id || !license_plate || !color) {
-            return res.status(400).json({ message: "Required fields (model_id, user_id, license_plate, color) are missing!" });
+        const { model_id, license_plate, color, image_url, gps_device_id } = req.body;
+
+        if (!model_id || !license_plate || !color) {
+            return res.status(400).json({ message: "Required fields (model_id, license_plate, color) are missing!" });
         }
 
         const query = `
@@ -29,7 +40,7 @@ exports.addFleetCar = async (req, res) => {
             RETURNING *;
         `;
         
-        const values = [model_id, user_id, license_plate, color, image_url, gps_device_id || null];
+        const values = [model_id, userId, license_plate, color, image_url, gps_device_id || null];
         const result = await pool.query(query, values);
 
         res.status(201).json({
@@ -39,31 +50,15 @@ exports.addFleetCar = async (req, res) => {
 
     } catch (error) {
         console.error("Error occurred in addFleetCar:", error.message);
-
         if (error.message.includes('invalid input syntax for type uuid')) {
-            return res.status(400).json({ 
-                message: "Invalid ID format! Please ensure you are using a valid 36-character UUID string." 
-            });
+            return res.status(400).json({ message: "Invalid ID format! Please ensure you are using a valid UUID string." });
         }
-
         if (error.code === '23503') {
-            if (error.detail.includes('model_id')) {
-                return res.status(404).json({ 
-                    message: "Failed to add car! The specified car model was not found." 
-                });
-            }
-            if (error.detail.includes('user_id')) {
-                return res.status(404).json({ 
-                    message: "Failed to add car! The specified lender user was not found." 
-                });
-            }
-            return res.status(404).json({ message: "Failed to add car! Related database record not found." });
+            return res.status(404).json({ message: "Failed to add car! The specified car model or user record was not found." });
         }
-        
         if (error.code === '23505') {
             return res.status(400).json({ message: "The license plate or GPS Device ID is already registered in the system!" });
         }
-        
         res.status(500).json({ message: "Internal server error." });
     }
 };
@@ -71,13 +66,22 @@ exports.addFleetCar = async (req, res) => {
 // Menarik mobil dari peredaran
 exports.withdrawFleetCar = async (req, res) => {
     try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
+
         const { car_id } = req.params;
 
-        const checkQuery = 'SELECT status FROM fleet_cars WHERE car_id = $1';
+        const checkQuery = 'SELECT status, user_id FROM fleet_cars WHERE car_id = $1';
         const checkResult = await pool.query(checkQuery, [car_id]);
 
         if (checkResult.rows.length === 0) {
             return res.status(404).json({ message: "Car not found." });
+        }
+
+        if (checkResult.rows[0].user_id !== userId) {
+            return res.status(403).json({ message: "Akses ditolak: Anda tidak berhak menarik mobil milik orang lain!" });
         }
 
         if (checkResult.rows[0].status === 'rented') {
@@ -103,10 +107,14 @@ exports.withdrawFleetCar = async (req, res) => {
     }
 };
 
-// Memasukkan mobil ke daftar maintenance
 exports.startMaintenance = async (req, res) => {
     const client = await pool.connect();
     try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
+
         const { car_id, description } = req.body;
 
         if (!car_id || !description) {
@@ -115,10 +123,12 @@ exports.startMaintenance = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const checkQuery = 'SELECT status FROM fleet_cars WHERE car_id = $1';
+        const checkQuery = 'SELECT status, user_id FROM fleet_cars WHERE car_id = $1';
         const checkResult = await client.query(checkQuery, [car_id]);
 
         if (checkResult.rows.length === 0) throw new Error('CAR_NOT_FOUND');
+        
+        if (checkResult.rows[0].user_id !== userId) throw new Error('NOT_YOUR_CAR');
         if (checkResult.rows[0].status !== 'available') throw new Error('CAR_NOT_AVAILABLE');
 
         const maintQuery = `
@@ -141,6 +151,7 @@ exports.startMaintenance = async (req, res) => {
     } catch (error) {
         await client.query('ROLLBACK');
         console.error("Error in startMaintenance:", error.message);
+        if (error.message === 'NOT_YOUR_CAR') return res.status(403).json({ message: "Akses ditolak: Anda bukan pemilik mobil ini!" });
         if (error.message === 'CAR_NOT_FOUND') return res.status(404).json({ message: "Car not found." });
         if (error.message === 'CAR_NOT_AVAILABLE') return res.status(400).json({ message: "Car must be 'available' to send to maintenance." });
         res.status(500).json({ message: "Internal server error." });
@@ -149,10 +160,14 @@ exports.startMaintenance = async (req, res) => {
     }
 };
 
-// Menyelesaikan servis dan mencatat biaya
 exports.completeMaintenance = async (req, res) => {
     const client = await pool.connect();
     try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: "Otentikasi gagal: Token tidak ditemukan atau tidak sah." });
+        }
+
         const { maintenance_id } = req.params;
         const { cost } = req.body;
 
@@ -162,10 +177,17 @@ exports.completeMaintenance = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const checkQuery = 'SELECT car_id, status FROM maintenance_list WHERE maintenance_id = $1';
+        const checkQuery = `
+            SELECT ml.car_id, ml.status, f.user_id 
+            FROM maintenance_list ml
+            JOIN fleet_cars f ON ml.car_id = f.car_id
+            WHERE ml.maintenance_id = $1
+        `;
         const checkResult = await client.query(checkQuery, [maintenance_id]);
 
         if (checkResult.rows.length === 0) throw new Error('MAINT_NOT_FOUND');
+        
+        if (checkResult.rows[0].user_id !== userId) throw new Error('NOT_YOUR_ASSET');
         if (checkResult.rows[0].status === 'completed') throw new Error('ALREADY_COMPLETED');
 
         const carId = checkResult.rows[0].car_id;
@@ -187,6 +209,7 @@ exports.completeMaintenance = async (req, res) => {
     } catch (error) {
         await client.query('ROLLBACK');
         console.error("Error in completeMaintenance:", error.message);
+        if (error.message === 'NOT_YOUR_ASSET') return res.status(403).json({ message: "Akses ditolak: Anda bukan pemilik aset perawatan ini!" });
         if (error.message === 'MAINT_NOT_FOUND') return res.status(404).json({ message: "Maintenance record not found." });
         if (error.message === 'ALREADY_COMPLETED') return res.status(400).json({ message: "This maintenance is already completed." });
         res.status(500).json({ message: "Internal server error." });
@@ -195,28 +218,18 @@ exports.completeMaintenance = async (req, res) => {
     }
 };
 
-// Mengambil daftar mobil milik lender
 exports.getLenderFleets = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id;
+        const userId = req.user?.userId;
 
         if (!userId) {
-            return res.status(400).json({ message: "User ID is required for testing!" });
+            return res.status(401).json({ message: "Unauthorized: Missing user authentication context." });
         }
 
         const query = `
             SELECT 
-                f.car_id, 
-                f.license_plate, 
-                f.color, 
-                f.status, 
-                f.image_url,
-                f.gps_device_id,
-                m.brand, 
-                m.model_name, 
-                m.base_daily_price
+                f.car_id, f.license_plate, f.color, f.status, f.image_url, f.gps_device_id,
+                m.brand, m.model_name, m.base_daily_price
             FROM fleet_cars f
             JOIN car_models m ON f.model_id = m.model_id
             WHERE f.user_id = $1
@@ -224,11 +237,7 @@ exports.getLenderFleets = async (req, res) => {
         `;
         
         const result = await pool.query(query, [userId]);
-
-        res.status(200).json({
-            message: "Successfully retrieved fleet list.",
-            data: result.rows
-        });
+        res.status(200).json({ message: "Successfully retrieved fleet list.", data: result.rows });
 
     } catch (error) {
         console.error("Error in getLenderFleets:", error.message);
@@ -236,15 +245,11 @@ exports.getLenderFleets = async (req, res) => {
     }
 };
 
-// Mengambil statistik dashboard lender
 exports.getLenderDashboard = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id;
-
+        const userId = req.user?.userId;
         if (!userId) {
-            return res.status(400).json({ message: "User ID is required for testing!" });
+            return res.status(401).json({ message: "Unauthorized: Missing user authentication context." });
         }
 
         const statsQuery = `
@@ -252,8 +257,7 @@ exports.getLenderDashboard = async (req, res) => {
                 COUNT(*) as total_fleet,
                 COUNT(CASE WHEN status = 'rented' THEN 1 END) as active_rentals,
                 COUNT(CASE WHEN status = 'maintenance' THEN 1 END) as in_maintenance
-            FROM fleet_cars
-            WHERE user_id = $1;
+            FROM fleet_cars WHERE user_id = $1;
         `;
         const statsResult = await pool.query(statsQuery, [userId]);
         const stats = statsResult.rows[0];
@@ -269,18 +273,13 @@ exports.getLenderDashboard = async (req, res) => {
         const totalRevenue = revenueResult.rows[0].total_revenue;
 
         const recentQuery = `
-            SELECT 
-                p.amount, 
-                p.payment_date, 
-                f.license_plate, 
-                m.model_name
+            SELECT p.amount, p.payment_date, f.license_plate, m.model_name
             FROM payments p
             JOIN rental_details rd ON p.transaction_id = rd.transaction_id
             JOIN fleet_cars f ON rd.car_id = f.car_id
             JOIN car_models m ON f.model_id = m.model_id
             WHERE f.user_id = $1 AND p.payment_status = 'success'
-            ORDER BY p.payment_date DESC
-            LIMIT 3;
+            ORDER BY p.payment_date DESC LIMIT 3;
         `;
         const recentResult = await pool.query(recentQuery, [userId]);
 
@@ -303,59 +302,33 @@ exports.getLenderDashboard = async (req, res) => {
     }
 };
 
-// Mengambil riwayat bengkel/maintenance (halaman maintenance)
 exports.getLenderMaintenance = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id;
-        if (!userId) return res.status(400).json({ message: "User ID is required for testing!" });
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ message: "Unauthorized: Missing user authentication context." });
 
         const query = `
-            SELECT 
-                ml.maintenance_id,
-                ml.start_date,
-                ml.end_date,
-                ml.cost,
-                ml.description,
-                ml.status,
-                f.license_plate,
-                m.model_name
+            SELECT ml.maintenance_id, ml.start_date, ml.end_date, ml.cost, ml.description, ml.status, f.license_plate, m.model_name
             FROM maintenance_list ml
             JOIN fleet_cars f ON ml.car_id = f.car_id
             JOIN car_models m ON f.model_id = m.model_id
-            WHERE f.user_id = $1
-            ORDER BY ml.start_date DESC;
+            WHERE f.user_id = $1 ORDER BY ml.start_date DESC;
         `;
-        
         const result = await pool.query(query, [userId]);
-
-        res.status(200).json({
-            message: "Successfully retrieved maintenance records.",
-            data: result.rows
-        });
+        res.status(200).json({ message: "Successfully retrieved maintenance records.", data: result.rows });
     } catch (error) {
         console.error("Error in getLenderMaintenance:", error.message);
         res.status(500).json({ message: "Internal server error." });
     }
 };
 
-// Mengambil riwayat keuangan dan denda (halaman finances)
 exports.getLenderFinances = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id;
-        if (!userId) return res.status(400).json({ message: "User ID is required for testing!" });
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ message: "Unauthorized: Missing user authentication context." });
 
         const earningsQuery = `
-            SELECT 
-                p.payment_id,
-                p.amount,
-                p.payment_date,
-                p.payment_method,
-                f.license_plate,
-                m.model_name
+            SELECT p.payment_id, p.amount, p.payment_date, p.payment_method, f.license_plate, m.model_name
             FROM payments p
             JOIN rental_transactions rt ON p.transaction_id = rt.transaction_id
             JOIN rental_details rd ON rt.transaction_id = rd.transaction_id
@@ -367,28 +340,17 @@ exports.getLenderFinances = async (req, res) => {
         const earningsResult = await pool.query(earningsQuery, [userId]);
 
         const penaltiesQuery = `
-            SELECT 
-                pn.penalty_id,
-                pn.penalty_type,
-                pn.amount,
-                pn.description,
-                pn.is_paid,
-                rd.actual_return_date,
-                f.license_plate
+            SELECT pn.penalty_id, pn.penalty_type, pn.amount, pn.description, pn.is_paid, rd.actual_return_date, f.license_plate
             FROM penalties pn
             JOIN rental_details rd ON pn.rental_detail_id = rd.rental_detail_id
             JOIN fleet_cars f ON rd.car_id = f.car_id
-            WHERE f.user_id = $1
-            ORDER BY rd.actual_return_date DESC;
+            WHERE f.user_id = $1 ORDER BY rd.actual_return_date DESC;
         `;
         const penaltiesResult = await pool.query(penaltiesQuery, [userId]);
 
         res.status(200).json({
             message: "Successfully retrieved financial records.",
-            data: {
-                earnings: earningsResult.rows,
-                penalties: penaltiesResult.rows
-            }
+            data: { earnings: earningsResult.rows, penalties: penaltiesResult.rows }
         });
     } catch (error) {
         console.error("Error in getLenderFinances:", error.message);
@@ -398,37 +360,19 @@ exports.getLenderFinances = async (req, res) => {
 
 exports.getLenderPenalties = async (req, res) => {
     try {
-        // Untuk testing Postman saat ini, kita ambil dari req.query.user_id
-        // Nanti saat digabung dengan kode backend1, ini harus diganti jadi req.user.user_id dari token JWT
-        const userId = req.query.user_id;
-        if (!userId) {
-            return res.status(400).json({ message: "User ID is required for testing!" });
-        }
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ message: "User ID is required!" });
 
         const query = `
-            SELECT 
-                pn.penalty_id,
-                pn.penalty_type,
-                pn.amount,
-                pn.description,
-                pn.is_paid,
-                rd.actual_return_date,
-                f.license_plate,
-                m.model_name
+            SELECT pn.penalty_id, pn.penalty_type, pn.amount, pn.description, pn.is_paid, rd.actual_return_date, f.license_plate, m.model_name
             FROM penalties pn
             JOIN rental_details rd ON pn.rental_detail_id = rd.rental_detail_id
             JOIN fleet_cars f ON rd.car_id = f.car_id
             JOIN car_models m ON f.model_id = m.model_id
-            WHERE f.user_id = $1
-            ORDER BY rd.actual_return_date DESC;
+            WHERE f.user_id = $1 ORDER BY rd.actual_return_date DESC;
         `;
-        
         const result = await pool.query(query, [userId]);
-
-        res.status(200).json({
-            message: "Successfully retrieved penalty records.",
-            data: result.rows
-        });
+        res.status(200).json({ message: "Successfully retrieved penalty records.", data: result.rows });
     } catch (error) {
         console.error("Error in getLenderPenalties:", error.message);
         res.status(500).json({ message: "Internal server error." });

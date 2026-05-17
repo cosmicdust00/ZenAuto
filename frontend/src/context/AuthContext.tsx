@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import type { UserProfile } from '../types';
 
 interface AuthContextType {
@@ -13,17 +13,19 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [token, setToken] = useState<string | null>(() => {
+    return localStorage.getItem('za_token');
+  });
 
-  useEffect(() => {
-    const savedToken = localStorage.getItem('za_token');
+  const [user, setUser] = useState<UserProfile | null>(() => {
     const savedUser = localStorage.getItem('za_user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+    try {
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (e) {
+      console.error("Error parsing user data from localStorage", e);
+      return null;
     }
-  }, []);
+  });
 
   const login = (newToken: string, userData: UserProfile) => {
     setToken(newToken);

@@ -4,6 +4,7 @@ import { Car, Wrench, DollarSign, Activity, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PatchCard } from '../../components/ui/PatchCard.tsx';
 import { Badge } from '../../components/ui/Badge.tsx';
+import { useAuth } from '../../context/AuthContext';
 
 // Definisi antarmuka struktur data dari backend
 interface DashboardStats {
@@ -28,6 +29,8 @@ interface FleetStatusItem {
 }
 
 export default function LenderDashboard() {
+  const { token, user } = useAuth();
+
   const [stats, setStats] = useState<DashboardStats>({
     total_fleet: 0,
     active_rentals: 0,
@@ -39,20 +42,21 @@ export default function LenderDashboard() {
   const [fleetList, setFleetList] = useState<FleetStatusItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // TEMPORARY BYPASS
-  const bypassUserId = '64ec5509-9b5f-4462-8018-044d92401799';
-
   useEffect(() => {
     const fetchDashboardData = async () => {
+      if (!token || !user) {
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
-        const token = localStorage.getItem('token');
-        
-        // Statistics data
-        const dashboardResponse = await axios.get('http://localhost:5000/api/lender/dashboard', {
-          params: { user_id: bypassUserId },
+        const config = {
           headers: { Authorization: `Bearer ${token}` }
-        });
+        };
+        
+        // Fetch Statistics data
+        const dashboardResponse = await axios.get('http://localhost:5000/api/lender/dashboard', config);
         
         if (dashboardResponse.data.data) {
           setStats({
@@ -64,11 +68,8 @@ export default function LenderDashboard() {
           setRecentFinances(dashboardResponse.data.data.recent_finances || []);
         }
 
-        // Data status armada
-        const fleetsResponse = await axios.get('http://localhost:5000/api/lender/fleets', {
-          params: { user_id: bypassUserId },
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        // Fetch Data status armada
+        const fleetsResponse = await axios.get('http://localhost:5000/api/lender/fleets', config);
 
         if (fleetsResponse.data.data) {
           setFleetList(fleetsResponse.data.data);
@@ -82,7 +83,7 @@ export default function LenderDashboard() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [token, user]);
 
   // Helper untuk memendekkan angka jutaan (Misal 4.700.000 -> 4.7M)
   const formatRevenueCompact = (value: number) => {
