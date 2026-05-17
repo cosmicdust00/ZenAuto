@@ -12,13 +12,6 @@ pool.query("SELECT NOW()", (err, res) => {
     if (err) console.error("Gagal query awal Supabase:", err);
     else {
         console.log("Supabase bisa digunakan pada:", res.rows[0].now);
-        console.log("Menjalankan seed...");
-        pool.query(seed, (err, res) => {
-            if (err) console.error("Gagal menjalankan seed: ", err);
-            else {
-                console.log("Seed sukses dijalankan.");
-            }
-        });
     }
 });
 
