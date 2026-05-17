@@ -1,34 +1,66 @@
-import { createContext, useState, type ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
+import type { UserProfile } from '../types';
 
 interface AuthContextType {
-  user: any;
-  login: (userData: any) => void;
+  token: string | null;
+  user: UserProfile | null;
+  loading: boolean;
+  login: (token: string, user: UserProfile) => void;
   logout: () => void;
+  updateProfileState: (updated: Partial<UserProfile>) => void;
+  isAuthenticated: boolean;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState(null);
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [token, setToken] = useState<string | null>(() => {
+    return localStorage.getItem('za_token');
+  });
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) setUser(JSON.parse(savedUser));
-  }, []);
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    const savedUser = localStorage.getItem('za_user');
+    try {
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (e) {
+      console.error("Error parsing user data from localStorage", e);
+      return null;
+    }
+  });
 
-  const login = (userData: any) => {
+  const [loading] = useState<boolean>(false);
+
+  const login = (newToken: string, userData: UserProfile) => {
+    setToken(newToken);
     setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('za_token', newToken);
+    localStorage.setItem('za_user', JSON.stringify(userData));
   };
 
   const logout = () => {
+    setToken(null);
     setUser(null);
-    localStorage.removeItem('user');
+    localStorage.removeItem('za_token');
+    localStorage.removeItem('za_user');
+  };
+
+  const updateProfileState = (updated: Partial<UserProfile>) => {
+    if (user) {
+      const nextUser = { ...user, ...updated };
+      setUser(nextUser);
+      localStorage.setItem('za_user', JSON.stringify(nextUser));
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, loading, login, logout, updateProfileState, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );
-}
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  return context;
+};
